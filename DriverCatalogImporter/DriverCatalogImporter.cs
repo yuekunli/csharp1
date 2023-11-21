@@ -110,9 +110,9 @@ namespace DriverCatalogImporter
 
         private List<VendorProfile> vendors = new List<VendorProfile>();
 
-        private readonly bool isProd;
+        private readonly bool isLaunchBackgroundService;
 
-        private DateTime? lastDownload = null;
+
 
         // configuration options:
 
@@ -139,12 +139,12 @@ namespace DriverCatalogImporter
         // options about WSUS
         private bool shouldUseWsusImport = true;
 
-        public ThirdPartyDriverCatalogImporter(bool prod)
+        public ThirdPartyDriverCatalogImporter(bool isBackgroundSerive)
         {
-            isProd = prod;
+            isLaunchBackgroundService = isBackgroundSerive;
             
-            if (prod)
-                dirFinder = new ProdDirFinder(AppContext.BaseDirectory);
+            if (isLaunchBackgroundService)
+                dirFinder = new BackgroundServiceDirFinder(AppContext.BaseDirectory);
             else
                 dirFinder = new SimpleDirFinder(@"C:\Temp\");
 
@@ -164,7 +164,8 @@ namespace DriverCatalogImporter
                 throw new Exception("Fail to create logger factory or logger");
             }
 
-            logger?.LogDebug("Initialize ThirdPartyDriverCatalogImporter, prod: {isProd}", isProd);
+            logger?.LogInformation("===========================================");
+            logger?.LogDebug("Initialize Third Part yDriver Catalog Importer, run as {mode}", isLaunchBackgroundService? "background Windows Service" : "console application");
 
             try
             {
@@ -172,9 +173,8 @@ namespace DriverCatalogImporter
             }
             catch (Exception e)
             {
-                logger?.LogError(e, "Fail to create downloader");
+                logger?.LogError(e, "Fail to create downloader\n");
                 throw new Exception("Fail to create downloader");
-
             }
 
             try
@@ -183,7 +183,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Fail to create cab extractor");
+                logger?.LogError(ex, "Fail to create cab extractor\n");
                 throw new Exception("Fail to create cab extractor");
             }
 
@@ -193,7 +193,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Fail to create file comparer");
+                logger?.LogError(ex, "Fail to create file comparer\n");
                 throw new Exception("Fail to file comparer");
             }
 
@@ -206,15 +206,11 @@ namespace DriverCatalogImporter
             }
             catch (Exception e)
             {
-                logger?.LogError(e, "Fail to create importer");
+                logger?.LogError(e, "Fail to create importer\n");
                 throw new Exception("Fail to create importer");
             }
 
             aTimer = new System.Timers.Timer();
-        }
-
-        public ThirdPartyDriverCatalogImporter() : this(false)
-        {
         }
 
         private void InitializeVendors()
@@ -270,7 +266,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "Fail to write flag file");
+                logger?.LogCritical(ex, "Fail to write flag file\n");
             }
         }
 
@@ -284,7 +280,7 @@ namespace DriverCatalogImporter
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"ShouldParseConfigFileOnEveryRun\" option, it has to be True or False");
+                    logger?.LogError(e, "Invalid value for \"ShouldParseConfigFileOnEveryRun\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("VendorProfileOverrideFilePath", StringComparison.CurrentCultureIgnoreCase))
@@ -306,7 +302,7 @@ namespace DriverCatalogImporter
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"ShouldParseVendorProfileOverrideOnEveryRun\" option, it has to be True or False");
+                    logger?.LogError(e, "Invalid value for \"ShouldParseVendorProfileOverrideOnEveryRun\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("VendorProfileOverrideAdditiveOnly", StringComparison.CurrentCultureIgnoreCase))
@@ -317,7 +313,7 @@ namespace DriverCatalogImporter
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"VendorProfileOverrideAdditiveOnly\" option, it has to be True or False");
+                    logger?.LogError(e, "Invalid value for \"VendorProfileOverrideAdditiveOnly\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("PrintVendorProfileInLogOnEveryRun", StringComparison.CurrentCultureIgnoreCase))
@@ -328,7 +324,7 @@ namespace DriverCatalogImporter
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"PrintVendorProfileInLogOnEveryRun\" option, it has to be True or False");
+                    logger?.LogError(e, "Invalid value for \"PrintVendorProfileInLogOnEveryRun\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("DumpVendorProfileAfterRun", StringComparison.CurrentCultureIgnoreCase))
@@ -339,7 +335,7 @@ namespace DriverCatalogImporter
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"DumpVendorProfileAfterRun\" option, it has to be True or False");
+                    logger?.LogError(e, "Invalid value for \"DumpVendorProfileAfterRun\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("ImmediateRunAfterStart", StringComparison.CurrentCultureIgnoreCase))
@@ -350,7 +346,7 @@ namespace DriverCatalogImporter
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"ImmediateRunAfterStart\" option, it has to be True or False");
+                    logger?.LogError(e, "Invalid value for \"ImmediateRunAfterStart\" option, it has to be True or False\n");
                 }
             }
             
@@ -362,7 +358,7 @@ namespace DriverCatalogImporter
                 }
                 catch (Exception e)
                 {
-                    logger?.LogError(e, "Invalid value for \"RunIntervalInSeconds\" option, it has to be an integer");
+                    logger?.LogError(e, "Invalid value for \"RunIntervalInSeconds\" option, it has to be an integer\n");
                 }
 
             }
@@ -374,7 +370,7 @@ namespace DriverCatalogImporter
                 }
                 catch (Exception e)
                 {
-                    logger?.LogError(e, "Invalid value for \"RunTimeoutInSeconds\" option, it has to be an integer");
+                    logger?.LogError(e, "Invalid value for \"RunTimeoutInSeconds\" option, it has to be an integer\n");
                 }
             }
             else if (k.Equals("MinLogLevel", StringComparison.CurrentCultureIgnoreCase))
@@ -420,12 +416,12 @@ namespace DriverCatalogImporter
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"ShouldUseWsusImport\" option, it has to be True or False");
+                    logger?.LogError(e, "Invalid value for \"ShouldUseWsusImport\" option, it has to be True or False\n");
                 }
             }
             else
             {
-                logger?.LogDebug("Unknown option: {0}", k);
+                logger?.LogDebug("Unknown option: {opt}", k);
             }
         }
 
@@ -524,7 +520,7 @@ namespace DriverCatalogImporter
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "Wrong syntax in the eligible field for vendor profile at line {line}", lineNumber);
+                        logger?.LogError(ex, "Wrong syntax in the eligible field for vendor profile at line {line}\n", lineNumber);
                         continue;
                     }
 
@@ -588,7 +584,7 @@ namespace DriverCatalogImporter
 
         private void WriteFlagFile()
         {
-            string flagFilePath = Path.Join(dirFinder.GetFlagFileDir(), "FLAG.txt");
+            string flagFilePath = Path.Join(dirFinder.GetFlagFileDir(), "DriverCatalogsUpdated.txt");
             if (File.Exists(flagFilePath))
             {
                 File.Delete(flagFilePath);
@@ -599,26 +595,34 @@ namespace DriverCatalogImporter
                 {
                     foreach (VendorProfile v in vendors)
                     {
-                        if (v.Eligible && v.HasChange && v.RunResult == RunResult.Success_Imported)
+                        if (v.Eligible)
                         {
-                            sw.WriteLine(v.Name);
+                            sw.WriteLine("{0}\t{1}", v.Name, v.RunResult.ToString());
+                        }
+                        else
+                        {
+                            sw.WriteLine("{0}\tSkipped", v.Name);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "Fail to write flag file");
+                logger?.LogCritical(ex, "Fail to write flag file\n");
             }
         }
 
-        private void onTimeElapsed(object? source, ElapsedEventArgs e)
+        private void OnTimeElapsed(object? source, ElapsedEventArgs e)
         {
             RunOnce();
         }
         public void RunOnce()
         {
-            logger.LogInformation("==============================================");
+            if (isLaunchBackgroundService)
+            {
+                logger?.LogInformation("===========================================");
+            }
+
             if (shouldParseConfigFileOnEveryRun)
             {
                 ParseConfigFile();
@@ -694,7 +698,7 @@ namespace DriverCatalogImporter
                             }
                             catch (Exception ex)
                             {
-                                logger?.LogError(ex, "[{vendorname}] : Fail to compare cab files", v.Name);
+                                logger?.LogError(ex, "[{vendorname}] : Fail to compare cab files\n", v.Name);
                                 v.RunResult = RunResult.Fail_Compare;
                                 return;
                             }
@@ -707,6 +711,7 @@ namespace DriverCatalogImporter
                             {
                                 logger?.LogError("[{VendorName}] : Failure, extract cab file", v.Name);
                                 v.RunResult = RunResult.Fail_ExtractXml;
+                                ce.DeleteXml(v);
                                 return;
                             }
 
@@ -731,7 +736,7 @@ namespace DriverCatalogImporter
                             }
                             else
                             {
-                                logger.LogError("[{vn}] : Fail to delete temporary XML file", v.Name);
+                                logger?.LogError("[{vn}] : Fail to delete temporary XML file", v.Name);
                             }
                         })
                     );
@@ -744,6 +749,8 @@ namespace DriverCatalogImporter
             try
             {
                 bool result = Task.WaitAll(tasks.ToArray(), runTimeoutInSeconds * 1000);
+                // Synchronously wait, if this is run as a console application, synchronous waiting keeps
+                // the main thread from exiting. 
                 if (result)
                 {
                     logger?.LogInformation("Run finish in time");
@@ -755,7 +762,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Run Error");
+                logger?.LogError(ex, "Run Error\n");
             }
             WriteFlagFile();
             CleanupAndRenameDir();
@@ -777,12 +784,12 @@ namespace DriverCatalogImporter
         {
             if (aTimer != null)
             {
-                aTimer.Elapsed -= onTimeElapsed;
-                aTimer.Elapsed += onTimeElapsed;
+                aTimer.Elapsed -= OnTimeElapsed;
+                aTimer.Elapsed += OnTimeElapsed;
                 aTimer.AutoReset = true;
                 aTimer.Interval = runIntervalInSeconds * 1000;
 
-                if (isProd)
+                if (isLaunchBackgroundService)
                 {
                     if (immediateRunAfterStart)
                     {

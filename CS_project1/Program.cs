@@ -9,7 +9,7 @@ class Program
         //PeriodicWorker.startWorker();
         //System.Threading.Thread.Sleep(30 * 1000);
         //CabDownloader.downloadDell();
-        CabDownloader.CheckHeader();
+        //CabDownloader.CheckHeader();
         //FileHasher.getHash();
         //FlagFileWriter.writeFlagFile();
 
@@ -19,5 +19,6 @@ class Program
 
         //TSVFileParser.parseFile();
         //FormattedPrinter.print();
+        FileNameInspector.CheckFileName();
     }
 }

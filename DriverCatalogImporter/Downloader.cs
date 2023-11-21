@@ -39,11 +39,11 @@ namespace DriverCatalogImporter
             req.Headers.UserAgent.Add(new ProductInfoHeaderValue(new ProductHeaderValue("Other")));
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"text/html"));
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"application/xhtml+xml"));
-            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"application/xml;q=0.9"));
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"application/xml", 0.9));
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"image/webp"));
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"image/apng"));
-            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"*/*;q=0.8,"));
-            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"application/signed-exchange;v=b3;q=0.7"));
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"*/*", 0.8));
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(@"application/signed-exchange", 0.7));
             req.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
             req.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("deflate"));
             req.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("br"));
@@ -63,7 +63,7 @@ namespace DriverCatalogImporter
                 }
                 catch (HttpRequestException e)
                 {
-                    logger.LogError(e, "[{vendorname}] : Fail to download cab file", vp.Name);
+                    logger.LogError(e, "[{vendorname}] : Fail to download cab file\n", vp.Name);
                     return false;
                 }
             }
@@ -82,7 +82,7 @@ namespace DriverCatalogImporter
                 }
                 catch (HttpRequestException e2)
                 {
-                    logger.LogError(e2, "[{vendorname}] : Fail to download cab file", vp.Name);
+                    logger.LogError(e2, "[{vendorname}] : Fail to download cab file\n", vp.Name);
                     return false;
                 }
             }
@@ -118,7 +118,7 @@ namespace DriverCatalogImporter
                 }
                 catch (HttpRequestException e)
                 {
-                    logger.LogError(e, "[{vendorname}] : Fail to inquire URL content headers", vp.Name);
+                    logger.LogError(e, "[{vendorname}] : Fail to inquire URL content headers\n", vp.Name);
                     return false;
                 }
             }
@@ -137,7 +137,7 @@ namespace DriverCatalogImporter
                 }
                 catch (HttpRequestException e2)
                 {
-                    logger.LogError(e2, "[{vendorname}] : Fail to inquire URL content headers", vp.Name);
+                    logger.LogError(e2, "[{vendorname}] : Fail to inquire URL content headers\n", vp.Name);
                     return false;
                 }
             }
@@ -161,7 +161,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception e)
             {
-                logger.LogError(e, "[{vn}] : Invalid value for Content-Length field, {v}", vp.Name, aValues[0]);
+                logger.LogError(e, "[{vn}] : Invalid value for Content-Length field, {v}\n", vp.Name, aValues[0]);
                 return false;
             }
             return true;

@@ -48,7 +48,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception e) 
             {
-                logger.LogError(e, "[{vn}] : Fail to load XML namespace", vp.Name);
+                logger.LogError(e, "[{vn}] : Fail to load XML namespace\n", vp.Name);
                 return false;
             }
 
@@ -60,7 +60,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "[{vn}] : Fail to load XML file", vp.Name);
+                logger.LogError(ex, "[{vn}] : Fail to load XML file\n", vp.Name);
                 return false;
             }
 
@@ -82,7 +82,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception e)
             {
-                logger.LogError(e, "[{vn}] : Fail to find relevant nodes in XML file", vp.Name);
+                logger.LogError(e, "[{vn}] : Fail to find relevant nodes in XML file\n", vp.Name);
                 return false;
             }
 
@@ -113,7 +113,7 @@ namespace DriverCatalogImporter
                     }
                     catch (Exception ex)
                     {
-                        logger.LogError(ex, "[{vn}] : Fail to revise package, this is the final attempt to publish the package", vp.Name);
+                        logger.LogError(ex, "[{vn}] : Fail to revise package, this is the final attempt to publish the package\n", vp.Name);
                     }
                 }
                 var t = UpdateDatabase(sdp.PackageId.ToString(), sqlCon);
@@ -165,7 +165,7 @@ namespace DriverCatalogImporter
             }
             catch(Exception ex)
             {
-                logger.LogError(ex, "Fail to import SDP file, {file}", sdpFilePath);
+                logger.LogError(ex, "Fail to import SDP file, {file}\n", sdpFilePath);
                 return false;
             }
         }
@@ -184,7 +184,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Fail to udpate database, package ID: {pkgid}", packageId);
+                logger.LogError(ex, "Fail to udpate database, package ID: {pkgid}\n", packageId);
                 return false;
             }
         }

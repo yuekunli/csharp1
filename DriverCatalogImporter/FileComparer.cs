@@ -48,12 +48,12 @@ namespace DriverCatalogImporter
             }
             catch (IOException e)
             {
-                logger.LogError(e, "[{vendorname}] : IO exception while computing hash", vp.Name);
+                logger.LogError(e, "[{vendorname}] : IO exception while computing hash\n", vp.Name);
                 return false;
             }
             catch (UnauthorizedAccessException e)
             {
-                logger.LogError(e, "[{vendorname}] : denied access while computing hash", vp.Name);
+                logger.LogError(e, "[{vendorname}] : denied access while computing hash\n", vp.Name);
                 return false;
             }
         }

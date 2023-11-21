@@ -17,14 +17,23 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger.LogCritical(ex, "Fail to find 7z.dll, which is necessary to extract cabinet files");
+                logger.LogCritical(ex, "Fail to find 7z.dll, which is necessary to extract cabinet files\n");
                 throw new Exception("Fail to find 7z.dll");
             }
         }
         public async Task<bool> ExtractXml(VendorProfile vp)
         {
             string cabFilePath = Path.Combine(dirFinder.GetNewCabFileDir(), vp.CabFileName);
-            string xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
+            string xmlFileName;
+            if (!vp.Name.Equals("HP", StringComparison.CurrentCultureIgnoreCase))
+            {
+                xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
+            }
+            else
+            {
+                xmlFileName = Path.ChangeExtension(Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(vp.CabFileName)), ".xml");
+            }
+            
             string extractedXmlFilePath = Path.Combine(dirFinder.GetCabExtractOutputDir(), xmlFileName);
             logger.LogInformation("[{vn}] : cab file path: {path}", vp.Name, cabFilePath);
             try
@@ -43,7 +52,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "[{vendorname}] : Fail to extract XML file", vp.Name);
+                logger.LogError(ex, "[{vendorname}] : Fail to extract XML file\n", vp.Name);
                 return false;
             }
         }
@@ -82,7 +91,7 @@ namespace DriverCatalogImporter
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "[{vn}] : Fail to extract SDP files in V2 folder", vp.Name);
+                logger.LogError(ex, "[{vn}] : Fail to extract SDP files in V2 folder\n", vp.Name);
                 return false;
             }
         }
@@ -91,7 +100,15 @@ namespace DriverCatalogImporter
         {
             try
             {
-                string xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
+                string xmlFileName;
+                if (!vp.Name.Equals("HP", StringComparison.CurrentCultureIgnoreCase))
+                {
+                    xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
+                }
+                else
+                {
+                    xmlFileName = Path.ChangeExtension(Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(vp.CabFileName)), ".xml");
+                }
                 string extractedXmlFilePath = Path.Combine(dirFinder.GetCabExtractOutputDir(), xmlFileName);
                 if (File.Exists(extractedXmlFilePath))
                 {
@@ -101,7 +118,7 @@ namespace DriverCatalogImporter
             }
             catch(Exception ex)
             {
-                logger.LogError(ex, "[{vendorname}] : Fail to delete temporary XML file", vp.Name);
+                logger.LogError(ex, "[{vendorname}] : Fail to delete temporary XML file\n", vp.Name);
                 return false;
             }
         }

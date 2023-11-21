@@ -1,22 +1,39 @@
 ﻿namespace DriverCatalogImporter
 {
-    internal class BackgroundServiceDirFinder : IDirFinder
+    internal class ServerDirFinder
     {
         private string rootDir;
 
         private string dataDir;
-        public BackgroundServiceDirFinder(string _rootDir)
+
+        private string logDir;
+
+        private string cfgDir;
+        public ServerDirFinder()
         {
-            rootDir = _rootDir;
+            rootDir = Environment.GetEnvironmentVariable("adaptivaserver");
+
             if (!Directory.Exists(rootDir))
             {
                 throw new Exception("root directory does not exist");
             }
 
-            dataDir = Path.Join(_rootDir, "data");
+            dataDir = Path.Join(rootDir, "data", "DriverCatalogs");
             if (!Directory.Exists(dataDir))
             {
                 Directory.CreateDirectory(dataDir);
+            }
+
+            logDir = Path.Join(rootDir, "logs");
+            if (!Directory.Exists(logDir))
+            {
+                Directory.CreateDirectory(logDir);
+            }
+
+            cfgDir = Path.Join(rootDir, "config");
+            if (!Directory.Exists(cfgDir))
+            {
+                Directory.CreateDirectory(cfgDir);
             }
         }
 
@@ -47,12 +64,7 @@
 
         public string GetLogFileDir()
         {
-            string s = Path.Join(rootDir, "logs");
-            if (!Directory.Exists(s))
-            {
-                Directory.CreateDirectory(s);
-            }
-            return s;
+            return logDir;
         }
 
         public string GetTmpSdpFileDir()
@@ -62,42 +74,21 @@
 
         public string GetFlagFileDir()
         {
-            string? s = Environment.GetEnvironmentVariable("adaptivaserver");
-            if (Directory.Exists(s))
-            {
-                s = Path.Join(s, "data", "DriverCatalogs");
-                if (!Directory.Exists(s))
-                {
-                    Directory.CreateDirectory(s);
-                }
-                return s;
-            }
-            else if (Directory.Exists(@"C:\Temp\"))
-            {
-                return @"C:\Temp\";
-            }
-            else
-                return @"C:\";
+            return dataDir;
         }
 
         public string[] GetConfigFileDir()
         {
             List<string> possibleDirs = new List<string>();
 
-            string? s = Environment.GetEnvironmentVariable("DirverCatalogImportCfgDir");
-            if (s != null && Directory.Exists(s))
-            {
-                possibleDirs.Add(s);
-            }
-
-            possibleDirs.Add(rootDir);
+            possibleDirs.Add(cfgDir);
 
             return possibleDirs.ToArray();
         }
 
         public string GetVendorProfileOverrideFileDir()
         {
-            return rootDir;
+            return cfgDir;
         }
     }
 }
