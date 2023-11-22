@@ -707,6 +707,10 @@ namespace DriverCatalogImporter
                                         v.RunResult = RunResult.Success_NoChange;
                                         return;
                                     }
+                                    else
+                                    {
+                                        logger?.LogInformation("[{vn}] : old content-length: {oldlen}, new content-length: {newlen}", v.Name, v.OldContentLength, v.NewContentLength);
+                                    }
                                 }
                                 else
                                 {

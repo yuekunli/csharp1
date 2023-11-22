@@ -158,6 +158,7 @@ namespace DriverCatalogImporter
             try
             {
                 vp.NewContentLength = int.Parse(aValues[0], NumberStyles.Integer);
+                logger.LogInformation("[{vn}] : Content-Length: {len}", vp.Name, vp.NewContentLength);
             }
             catch (Exception e)
             {
