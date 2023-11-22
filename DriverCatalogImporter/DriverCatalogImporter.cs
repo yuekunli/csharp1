@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.Logging;
 using NReco.Logging.File;
+using System.Diagnostics.Metrics;
 using System.Globalization;
+using System.Text;
 using System.Timers;
 
 namespace DriverCatalogImporter
@@ -85,11 +87,11 @@ namespace DriverCatalogImporter
 
         private static VendorProfile[] InitialProfiles = new VendorProfile[] {
             new VendorProfile("Dell", @"https://downloads.dell.com/Catalog/DellSDPCatalogPC.cab", true),
-            new VendorProfile("Fujitsu", @"https://support.ts.fujitsu.com/GFSMS/globalflash/FJSVUMCatalogForSCCM.cab", false),
-            new VendorProfile("HP", @"https://hpia.hpcloud.hp.com/downloads/sccmcatalog/HpCatalogForSms.latest.cab", false),
-            new VendorProfile("Lenovo", @"https://download.lenovo.com/luc/v2/LenovoUpdatesCatalog2v2.cab", false),
-            new VendorProfile("DellServer", @"https://downloads.dell.com/Catalog/DellSDPCatalog.cab", false),
-            new VendorProfile("HPEnterprise", @"https://downloads.hpe.com/pub/softlib/puc/hppuc.cab", false)
+            new VendorProfile("Fujitsu", @"https://support.ts.fujitsu.com/GFSMS/globalflash/FJSVUMCatalogForSCCM.cab", true),
+            new VendorProfile("HP", @"https://hpia.hpcloud.hp.com/downloads/sccmcatalog/HpCatalogForSms.latest.cab", true),
+            new VendorProfile("Lenovo", @"https://download.lenovo.com/luc/v2/LenovoUpdatesCatalog2v2.cab", true),
+            new VendorProfile("DellServer", @"https://downloads.dell.com/Catalog/DellSDPCatalog.cab", true),
+            new VendorProfile("HPEnterprise", @"https://downloads.hpe.com/pub/softlib/puc/hppuc.cab", true)
         };
 
         private readonly System.Timers.Timer aTimer;
@@ -126,7 +128,7 @@ namespace DriverCatalogImporter
 
         // options about verboseness
         private bool printVendorProfileInLogOnEveryRun = false;
-        private bool dumpVendorProfileAfterRun = false;
+        private bool dumpVendorProfileAfterRun = true;
 
         // options about scheduling:
         private bool immediateRunAfterStart = true;
@@ -231,7 +233,7 @@ namespace DriverCatalogImporter
             });
 
             int fieldWidth = longestUrlLength + 3;
-            string formatS = "{0,-15}  {1,-" + fieldWidth + "}  {2,-15}";
+            string formatS = "{0,-20}{1,-" + fieldWidth + "}{2,-15}{3,-12}{4,30}";
             return formatS;
         }
 
@@ -239,10 +241,10 @@ namespace DriverCatalogImporter
         {
             string formatS = GetVendorProfileFormatString();
             logger?.LogInformation("Current Vendor Profile:");
-            logger?.LogInformation(formatS, "Name", "URL", "Eligible");
+            logger?.LogInformation(formatS, "Name", "URL", "Eligible", "FileSize", "LastDownload");
             foreach (VendorProfile v in vendors)
             {
-                logger?.LogInformation(formatS, v.Name, v.DownloadUri.AbsoluteUri, v.Eligible);
+                logger?.LogInformation(formatS, v.Name, v.DownloadUri.AbsoluteUri, v.Eligible, v.NewContentLength.ToString(), v.LastDownload.ToString());
             }
         }
 
@@ -260,7 +262,7 @@ namespace DriverCatalogImporter
                 {
                     foreach (VendorProfile v in vendors)
                     {
-                        sw.WriteLine(formatS, v.Name, v.DownloadUri.AbsoluteUri, v.Eligible);
+                        sw.WriteLine(formatS, v.Name, v.DownloadUri.AbsoluteUri, v.Eligible, v.NewContentLength.ToString(), v.LastDownload.ToString());
                     }
                 }
             }
@@ -551,6 +553,50 @@ namespace DriverCatalogImporter
             }
         }
 
+        private void ParseDumpedVendorProfile()
+        {
+            string filePath = Path.Join(dirFinder.GetVendorProfileOverrideFileDir(), "EffectiveVendorProfile.txt");
+            if (!File.Exists(filePath))
+            {
+                logger?.LogWarning("Previous run did not dump vendor profiles, cannot get last download time, will download cab files");
+                return;
+            }
+            var entries = File.ReadAllLines(filePath);
+            StringBuilder sb = new StringBuilder();
+            foreach (var entry in entries)
+            {
+                int counter = 0;
+                sb.Clear();
+                var parts = entry.Split();
+                string name = "";
+                int filesize = 0;
+                foreach(var part in parts)
+                {
+                    if (string.IsNullOrEmpty(part)) 
+                        continue;
+                    
+                    counter++;
+                    if (counter == 1)
+                        name = part;
+                    
+                    if (counter == 4)
+                        filesize = int.Parse(part, NumberStyles.Integer);
+                    
+                    if (counter >= 5)
+                        sb.Append(part).Append(' ');
+                }
+                foreach(var v in vendors)
+                {
+                    if (v.Name.Equals(name, StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        v.LastDownload = DateTime.Parse(sb.ToString());
+                        v.OldContentLength = filesize;
+                        break;
+                    }
+                }
+            }
+        }
+
         private void CreateLogger(LogProvider p)
         {
             if (p == LogProvider.Console)
@@ -636,6 +682,8 @@ namespace DriverCatalogImporter
                 PrintVendorProfile();
             }
 
+            ParseDumpedVendorProfile(); // get last download timestamp
+
             List<Task> tasks = new List<Task>();
 
             foreach (VendorProfile v in vendors)
@@ -656,7 +704,6 @@ namespace DriverCatalogImporter
                                     if (v.OldContentLength == v.NewContentLength)
                                     {
                                         logger?.LogInformation("[{vn}] : Content-Length remains the same", v.Name);
-                                        v.NewContentLength = 0;
                                         v.RunResult = RunResult.Success_NoChange;
                                         return;
                                     }
