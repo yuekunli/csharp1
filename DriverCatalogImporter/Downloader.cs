@@ -7,30 +7,48 @@ namespace DriverCatalogImporter
 {
     internal class Downloader
     {
-        private readonly HttpClient cl;
-        private readonly HttpClient clWithProxy;
+        private readonly HttpClient primaryClient;
+        private readonly HttpClient? secondaryClient = null;
         private readonly ILogger logger;
 
         private readonly IDirFinder dirFinder;
-        public Downloader(ILogger _logger, IDirFinder _dirFinder)
+
+        public Downloader(ILogger _logger, IDirFinder _dirFinder) : this (_logger, _dirFinder, null) { }
+        public Downloader(ILogger _logger, IDirFinder _dirFinder, Uri? _proxyUri)
         {
-            var proxy = new WebProxy
-            {
-                Address = new Uri(@"http://192.168.50.2:8080")
-            };
-            var httpClientHandler = new HttpClientHandler
-            {
-                Proxy = proxy
-            };
-            clWithProxy = new HttpClient(httpClientHandler);
-            
-            cl = new HttpClient();
-            // HttpClient has a static member "DefaultProxy", cl inherits it.
-            // at this point, the DefaultProxy doesn't have an address.
-            // When cl actually sends a requests, "DefaultProxy" will read environment variable settings
-            
             logger = _logger;
             dirFinder = _dirFinder;
+
+            if (_proxyUri != null)
+            {
+                logger.LogInformation("Proxy setting is provided in config file");
+
+                var proxy = new WebProxy
+                {
+                    //Address = new Uri(@"http://192.168.50.2:8080")
+                    Address = _proxyUri
+                };
+                var httpClientHandler = new HttpClientHandler
+                {
+                    Proxy = proxy
+                };
+                primaryClient = new HttpClient(httpClientHandler);
+                secondaryClient = new HttpClient();
+                
+                string? httpsProxy = Environment.GetEnvironmentVariable("HTTPS_PROXY");
+                string? httpProxy = Environment.GetEnvironmentVariable("HTTP_PROXY");
+                logger.LogCritical("System default proxy setting: HTTP proxy: {ip1},   HTTPS proxy: {ip2}  ", httpProxy, httpsProxy);
+            }
+            else
+            {
+                primaryClient = new HttpClient();
+                logger.LogInformation("Proxy setting is not provided in the config file");
+                logger.LogTrace("If environment variables HTTP_PROXY or HTTPS_PROXY are set, their values will be used");
+            }
+            
+            // HttpClient has a static member "DefaultProxy", client created by "new HttpClient()" inherits it.
+            // at this point, the DefaultProxy doesn't have an address.
+            // When client actually sends a requests, "DefaultProxy" will read environment variable settings
         }
 
         private HttpRequestMessage BuildRequest(VendorProfile vp)
@@ -56,7 +74,7 @@ namespace DriverCatalogImporter
             try
             {
                 HttpRequestMessage req = BuildRequest(vp);
-                resp = await cl.SendAsync(req);
+                resp = await primaryClient.SendAsync(req);
                 try
                 {
                     resp.EnsureSuccessStatusCode();
@@ -70,19 +88,24 @@ namespace DriverCatalogImporter
             catch (HttpRequestException e)
             {
                 logger.LogDebug("[{vn}] : exception: {ex} ", vp.Name, e.Message);
-                string? httpsProxy = Environment.GetEnvironmentVariable("https_proxy");
-                string? httpProxy = Environment.GetEnvironmentVariable("http_proxy");
-                logger.LogDebug("[{vn}] : Default proxy setting: HTTP proxy: {ip1},   HTTPS proxy: {ip2}  ", vp.Name, httpProxy, httpsProxy);
-                logger.LogWarning("[{vn}] : Download attempt timed out with no proxy setting or default proxy setting, try with explicit proxy setting now", vp.Name);
-                HttpRequestMessage req = BuildRequest(vp); // is there a way I can reset a request message so that I don't have to re-build one?
-                resp = await clWithProxy.SendAsync(req);
-                try
+                if (secondaryClient != null)
                 {
-                    resp.EnsureSuccessStatusCode();
+                    logger.LogWarning("[{vn}] : Download attempt timed out with proxy setting in config file, try with no proxy or system default proxy setting now", vp.Name);
+
+                    HttpRequestMessage req = BuildRequest(vp); // is there a way I can reset a request message so that I don't have to re-build one?
+                    resp = await secondaryClient.SendAsync(req);
+                    try
+                    {
+                        resp.EnsureSuccessStatusCode();
+                    }
+                    catch (HttpRequestException e2)
+                    {
+                        logger.LogError(e2, "[{vendorname}] : Fail to download cab file\n", vp.Name);
+                        return false;
+                    }
                 }
-                catch (HttpRequestException e2)
+                else
                 {
-                    logger.LogError(e2, "[{vendorname}] : Fail to download cab file\n", vp.Name);
                     return false;
                 }
             }
@@ -111,7 +134,7 @@ namespace DriverCatalogImporter
             try
             {
                 HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Head, vp.DownloadUri);
-                resp = await cl.SendAsync(req);
+                resp = await primaryClient.SendAsync(req);
                 try
                 {
                     resp.EnsureSuccessStatusCode();
@@ -125,19 +148,23 @@ namespace DriverCatalogImporter
             catch (HttpRequestException ex)
             {
                 logger.LogDebug("[{vn}] : exception: {ex} ", vp.Name, ex.Message);
-                string? httpsProxy = Environment.GetEnvironmentVariable("https_proxy");
-                string? httpProxy = Environment.GetEnvironmentVariable("http_proxy");
-                logger.LogDebug("[{vn}] : Default proxy setting: HTTP proxy: {ip1},   HTTPS proxy: {ip2}  ", vp.Name, httpProxy, httpsProxy);
-                logger.LogWarning("[{vn}] : HTTP HEAD request timed out with no proxy setting or default proxy setting, try with explicit proxy setting now", vp.Name);
-                HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Head, vp.DownloadUri);
-                resp = await clWithProxy.SendAsync(req);
-                try
+                if (secondaryClient != null)
                 {
-                    resp.EnsureSuccessStatusCode();
+                    logger.LogWarning("[{vn}] : HTTP HEAD request timed out with proxy setting in config file, try no proxy setting or default proxy setting now", vp.Name);
+                    HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Head, vp.DownloadUri);
+                    resp = await secondaryClient.SendAsync(req);
+                    try
+                    {
+                        resp.EnsureSuccessStatusCode();
+                    }
+                    catch (HttpRequestException e2)
+                    {
+                        logger.LogError(e2, "[{vendorname}] : Fail to inquire URL content headers\n", vp.Name);
+                        return false;
+                    }
                 }
-                catch (HttpRequestException e2)
+                else
                 {
-                    logger.LogError(e2, "[{vendorname}] : Fail to inquire URL content headers\n", vp.Name);
                     return false;
                 }
             }

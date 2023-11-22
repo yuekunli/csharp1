@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.UpdateServices.Administration;
 using System.Data.SqlClient;
+using System.Net;
 using System.Xml;
 using System.Xml.XPath;
 
@@ -15,9 +16,25 @@ namespace DriverCatalogImporter
         private readonly string DataBaseName = "SUSDB";
         private readonly string ConnectionStr;
 
-        public WsusImporter(ILogger _logger, IDirFinder _dirFinder)
+        public WsusImporter(ILogger _logger, IDirFinder _dirFinder) : this (_logger, _dirFinder, null) { }
+        public WsusImporter(ILogger _logger, IDirFinder _dirFinder, IPEndPoint? _wsusEndPoint)
         {
-            wsus = AdminProxy.GetUpdateServer();
+            if (_wsusEndPoint != null)
+            {
+                if (_wsusEndPoint.Port != 0)
+                {
+                    wsus = AdminProxy.GetUpdateServer(_wsusEndPoint.Address.ToString(), false, _wsusEndPoint.Port);
+                }
+                else
+                {
+                    wsus = AdminProxy.GetUpdateServer(_wsusEndPoint.Address.ToString(), false);
+                }
+            }
+            else
+            {
+                wsus = AdminProxy.GetUpdateServer();
+            }
+            
             ConnectionStr = string.Format("Server={0};Database={1};Integrated Security=sspi;Pooling=true", ServerName, DataBaseName);
             logger = _logger;
             dirFinder = _dirFinder;

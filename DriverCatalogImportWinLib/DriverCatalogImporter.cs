@@ -76,7 +76,7 @@ namespace DriverCatalogImporter
      * 
      */
 
-    public class ThirdPartyDriverCatalogImporter : IDisposable
+    public class AImporter : IDisposable
     {
         private enum RunResult
         {
@@ -125,7 +125,7 @@ namespace DriverCatalogImporter
         private bool shouldUseWsusImport = true;
         private LogLevel minLogLevel = LogLevel.Information;
 
-        public ThirdPartyDriverCatalogImporter(bool prod)
+        public AImporter(bool prod)
         {
             isProd = prod;
             
@@ -150,7 +150,7 @@ namespace DriverCatalogImporter
                 throw new Exception("Fail to create logger factory or logger");
             }
 
-            logger.LogDebug("Initialize ThirdPartyDriverCatalogImporter, prod: {isProd}", isProd);
+            logger.LogDebug("Initialize AImporter, prod: {isProd}", isProd);
 
             dl = new Downloader(loggerFactory.CreateLogger<Downloader>(), dirFinder);
             if (dl == null)
@@ -188,7 +188,7 @@ namespace DriverCatalogImporter
             }
         }
 
-        public ThirdPartyDriverCatalogImporter() : this(false)
+        public AImporter() : this(false)
         {
         }
 
@@ -435,7 +435,7 @@ namespace DriverCatalogImporter
             if (provider == 0)
             {
                 loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-                logger = loggerFactory.CreateLogger<ThirdPartyDriverCatalogImporter>();
+                logger = loggerFactory.CreateLogger<AImporter>();
             }
             else if (provider == 1)
             {
@@ -453,7 +453,7 @@ namespace DriverCatalogImporter
                     //    return isProd ? e.LogLevel >= LogLevel.Information : e.LogLevel >= LogLevel.Trace;
                     //}
                 }));
-                logger = loggerFactory.CreateLogger<ThirdPartyDriverCatalogImporter>();
+                logger = loggerFactory.CreateLogger<AImporter>();
             }
         }
 

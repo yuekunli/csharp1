@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using NReco.Logging.File;
-using System.Diagnostics.Metrics;
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Timers;
 
@@ -65,7 +65,7 @@ namespace DriverCatalogImporter
      * 
      */
 
-    public class ThirdPartyDriverCatalogImporter : IDisposable
+    public class AImporter : IDisposable
     {
         public enum RunResult
         {
@@ -139,9 +139,13 @@ namespace DriverCatalogImporter
         private LogLevel minLogLevel = LogLevel.Information;
 
         // options about WSUS
+        private IPEndPoint? wsusEndPoint = null;
         private bool shouldUseWsusImport = true;
 
-        public ThirdPartyDriverCatalogImporter(bool isBackgroundSerive)
+        // options about Proxy
+        private Uri? proxy = null;
+
+        public AImporter(bool isBackgroundSerive)
         {
             isLaunchBackgroundService = isBackgroundSerive;
             
@@ -149,6 +153,7 @@ namespace DriverCatalogImporter
                 dirFinder = new BackgroundServiceDirFinder(AppContext.BaseDirectory);
             else
                 dirFinder = new SimpleDirFinder(@"C:\Temp\");
+                //dirFinder = new ServerDirFinder();
 
             if (dirFinder == null)
             {
@@ -171,7 +176,7 @@ namespace DriverCatalogImporter
 
             try
             {
-                dl = new Downloader(loggerFactory.CreateLogger<Downloader>(), dirFinder);
+                dl = new Downloader(loggerFactory.CreateLogger<Downloader>(), dirFinder, proxy);
             }
             catch (Exception e)
             {
@@ -202,7 +207,7 @@ namespace DriverCatalogImporter
             try
             {
                 if (shouldUseWsusImport)
-                    imp = new WsusImporter(loggerFactory.CreateLogger<WsusImporter>(), dirFinder);
+                    imp = new WsusImporter(loggerFactory.CreateLogger<WsusImporter>(), dirFinder, wsusEndPoint);
                 else
                     imp = new DefaultImporter(loggerFactory.CreateLogger<DefaultImporter>(), dirFinder);
             }
@@ -421,6 +426,28 @@ namespace DriverCatalogImporter
                     logger?.LogError(e, "Invalid value for \"ShouldUseWsusImport\" option, it has to be True or False\n");
                 }
             }
+            else if (k.Equals("WsusEndPoint", StringComparison.CurrentCultureIgnoreCase))
+            {
+                try
+                {
+                    wsusEndPoint = IPEndPoint.Parse(v);
+                }
+                catch (Exception e)
+                {
+                    logger?.LogError(e, "Invalid value for \"WsusEndPoint\" option, it has to be in the 1.1.1.1 or 1.1.1.1:80 format\n");
+                }
+            }
+            else if (k.Equals("Proxy", StringComparison.CurrentCultureIgnoreCase))
+            {
+                try
+                {
+                    proxy = new Uri(v);
+                }
+                catch (Exception e)
+                {
+                    logger?.LogError(e, "Invalid value for \"Proxy\" option, it has to be in the http://1.1.1.1:80 or https://1.1.1.1:80 format\n");
+                }
+            }
             else
             {
                 logger?.LogDebug("Unknown option: {opt}", k);
@@ -445,18 +472,20 @@ namespace DriverCatalogImporter
             if (found)
             {
                 var entries = File.ReadAllLines(cfgFilePath);
-                foreach (var entry in entries)
+                foreach (var e in entries)
                 {
+                    var entry = e.Trim();
+                    if (String.IsNullOrWhiteSpace(entry))
+                        continue;
+                    if (entry.StartsWith("//"))
+                        continue;
+                    
                     var parts = entry.Split('\t');
                     if (parts.Length == 2)
                     {
                         string k = parts[0];
                         string v = parts[1];
                         ParseConfigOptions(k, v);
-                    }
-                    else if (String.IsNullOrWhiteSpace(entry))
-                    {
-                        logger?.LogTrace("Empty config entry line");
                     }
                     else
                     {
@@ -602,7 +631,7 @@ namespace DriverCatalogImporter
             if (p == LogProvider.Console)
             {
                 loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-                logger = loggerFactory.CreateLogger<ThirdPartyDriverCatalogImporter>();
+                logger = loggerFactory.CreateLogger<AImporter>();
             }
             else if (p == LogProvider.File)
             {
@@ -616,7 +645,7 @@ namespace DriverCatalogImporter
                     MinLevel = minLogLevel,
                     UseUtcTimestamp = true
                 }));
-                logger = loggerFactory.CreateLogger<ThirdPartyDriverCatalogImporter>();
+                logger = loggerFactory.CreateLogger<AImporter>();
             }
         }
 

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
@@ -20,6 +21,33 @@ namespace CS_project1
             Console.WriteLine(Path.ChangeExtension(a, ".xml"));
         }
 
+        public static void CheckIP()
+        {
+            string address = "192.168.50.2:5050";
 
+            Uri uri = new Uri(String.Format("http://{0}", address));
+
+            Console.WriteLine(uri.ToString());
+            Console.WriteLine(uri.Host);
+            Console.WriteLine(uri.Port);
+            IPAddress ipadd = IPAddress.Parse(uri.Host);
+            IPEndPoint p1 = IPEndPoint.Parse(address);
+            Console.WriteLine(p1.Address.ToString());
+            Console.WriteLine(p1.Port);
+
+            string address2 = "127.16.16.61";
+            IPEndPoint p2 = IPEndPoint.Parse(address2);
+            Console.WriteLine(p2.Address.ToString());
+            Console.WriteLine(p2.Port);
+
+            Uri url;
+            IPAddress ip;
+            if (Uri.TryCreate(String.Format("http://{0}", "127.0.0.1:5"), UriKind.Absolute, out url) &&
+               IPAddress.TryParse(url.Host, out ip))
+            {
+                IPEndPoint endPoint = new IPEndPoint(ip, url.Port);
+            }
+
+        }
     }
 }

@@ -7,7 +7,7 @@ IHostBuilder builder = Host.CreateDefaultBuilder(args)
    })
    .ConfigureServices((context, services) =>
    {
-       services.AddSingleton<ThirdPartyDriverCatalogImporter>();
+       services.AddSingleton<AImporter>();
        services.AddHostedService<DriverCatalogImportWorker>();
    });
     

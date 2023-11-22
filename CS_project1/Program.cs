@@ -19,8 +19,9 @@ class Program
 
         //TSVFileParser.parseFile();
         //FormattedPrinter.print();
-        FormattedPrinter.Print2();
-        FormattedPrinter.Read2();
+        //FormattedPrinter.Print2();
+        //FormattedPrinter.Read2();
         //FileNameInspector.CheckFileName();
+        FileNameInspector.CheckIP();
     }
 }

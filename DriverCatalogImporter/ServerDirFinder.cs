@@ -1,17 +1,21 @@
 ﻿namespace DriverCatalogImporter
 {
-    internal class ServerDirFinder
+    internal class ServerDirFinder : IDirFinder
     {
-        private string rootDir;
+        private readonly string rootDir;
 
-        private string dataDir;
+        private readonly string dataDir;
 
-        private string logDir;
+        private readonly string logDir;
 
-        private string cfgDir;
+        private readonly string cfgDir;
         public ServerDirFinder()
         {
             rootDir = Environment.GetEnvironmentVariable("adaptivaserver");
+            if (rootDir == null)
+            {
+                throw new Exception("ADAPTIVASERVER environment variable is not set");
+            }
 
             if (!Directory.Exists(rootDir))
             {

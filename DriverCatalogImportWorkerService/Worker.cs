@@ -5,14 +5,14 @@ namespace DriverCatalogImportWorkerService
     public class DriverCatalogImportWorker : BackgroundService
     {
         private readonly ILogger<DriverCatalogImportWorker> _logger;
-        private readonly ThirdPartyDriverCatalogImporter? _importer;
+        private readonly AImporter? _importer;
 
         public DriverCatalogImportWorker(ILogger<DriverCatalogImportWorker> logger)
         {
             _logger = logger;
             try
             {
-                _importer = new ThirdPartyDriverCatalogImporter(true);
+                _importer = new AImporter(true);
             }
             catch (Exception ex)
             {

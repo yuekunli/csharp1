@@ -13,7 +13,7 @@ namespace DriverCatalogImporter
         public int OldContentLength { get; set; }
         public int NewContentLength { get; set; }
         public DateTime? LastDownload { get; set; }
-        public ThirdPartyDriverCatalogImporter.RunResult RunResult { get; set; } 
+        public AImporter.RunResult RunResult { get; set; } 
 
 
         public VendorProfile(string name, string url, bool eligible)
@@ -26,7 +26,7 @@ namespace DriverCatalogImporter
             HasChange = false;
             OldContentLength = 0;
             NewContentLength = 0;
-            RunResult = ThirdPartyDriverCatalogImporter.RunResult.Success_NoChange;
+            RunResult = AImporter.RunResult.Success_NoChange;
             LastDownload = null;
         }
 
@@ -49,7 +49,7 @@ namespace DriverCatalogImporter
                 ExtractOutputFolderName = Path.GetFileNameWithoutExtension(url);
                 HasChange = false;
                 OldContentLength = 0;
-                RunResult = ThirdPartyDriverCatalogImporter.RunResult.Success_NoChange;
+                RunResult = AImporter.RunResult.Success_NoChange;
                 LastDownload = null;
             }
         }
