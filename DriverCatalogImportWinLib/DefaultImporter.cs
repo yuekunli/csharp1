@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace DriverCatalogImporter
 {
@@ -12,7 +13,7 @@ namespace DriverCatalogImporter
             logger = _logger;
             this.dirFinder = _dirFinder;
         }
-        public bool ImportFromXml(VendorProfile vp)
+        public Task<bool> ImportFromXml(VendorProfile vp)
         {
             string xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
             string xmlFilePath = Path.Combine(dirFinder.GetCabExtractOutputDir(), xmlFileName);
@@ -24,8 +25,7 @@ namespace DriverCatalogImporter
             {
                 logger.LogError("[{VendorName}] : ImportFromXml, XML file does not exist", vp.Name);
             }
-            
-            return true;
+            return Task<bool>.FromResult(true);
         }
 
         public bool ImportFromSdp(string sdpFilePath)

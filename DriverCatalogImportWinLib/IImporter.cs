@@ -1,9 +1,9 @@
-﻿namespace DriverCatalogImporter
+﻿using System.Threading.Tasks;
+
+namespace DriverCatalogImporter
 {
     internal interface IImporter
     {
-        bool ImportFromXml(VendorProfile vp);
-
-        bool ImportFromSdp(string sdpFilePath);
+        Task<bool> ImportFromXml(VendorProfile vp);
     }
 }

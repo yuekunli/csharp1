@@ -1,5 +1,4 @@
-﻿using System.Threading;
-using DriverCatalogImporter;
+﻿using DriverCatalogImporter;
 
 namespace DriverCatalogImportNetFrameworkConsoleApp
 {
@@ -7,8 +6,7 @@ namespace DriverCatalogImportNetFrameworkConsoleApp
     {
         static void Main(string[] args)
         {
-            new ThirdPartyDriverCatalogImporter().Start();
-            //Thread.Sleep(60 * 60 * 1000);
+            new AImporter(false).RunOnce();
         }
     }
 }

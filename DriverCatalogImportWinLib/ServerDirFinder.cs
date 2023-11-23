@@ -4,23 +4,44 @@ using System.IO;
 
 namespace DriverCatalogImporter
 {
-    internal class BackgroundServiceDirFinder : IDirFinder
+    internal class ServerDirFinder : IDirFinder
     {
-        private string rootDir;
+        private readonly string rootDir;
 
-        private string dataDir;
-        public BackgroundServiceDirFinder(string _rootDir)
+        private readonly string dataDir;
+
+        private readonly string logDir;
+
+        private readonly string cfgDir;
+        public ServerDirFinder()
         {
-            rootDir = _rootDir;
+            rootDir = Environment.GetEnvironmentVariable("adaptivaserver");
+            if (rootDir == null)
+            {
+                throw new Exception("ADAPTIVASERVER environment variable is not set");
+            }
+
             if (!Directory.Exists(rootDir))
             {
                 throw new Exception("root directory does not exist");
             }
 
-            dataDir = Path.Combine(_rootDir, "data");
+            dataDir = Path.Combine(rootDir, "data", "DriverCatalogs");
             if (!Directory.Exists(dataDir))
             {
                 Directory.CreateDirectory(dataDir);
+            }
+
+            logDir = Path.Combine(rootDir, "logs");
+            if (!Directory.Exists(logDir))
+            {
+                Directory.CreateDirectory(logDir);
+            }
+
+            cfgDir = Path.Combine(rootDir, "config");
+            if (!Directory.Exists(cfgDir))
+            {
+                Directory.CreateDirectory(cfgDir);
             }
         }
 
@@ -51,12 +72,7 @@ namespace DriverCatalogImporter
 
         public string GetLogFileDir()
         {
-            string s = Path.Combine(rootDir, "logs");
-            if (!Directory.Exists(s))
-            {
-                Directory.CreateDirectory(s);
-            }
-            return s;
+            return logDir;
         }
 
         public string GetTmpSdpFileDir()
@@ -66,42 +82,21 @@ namespace DriverCatalogImporter
 
         public string GetFlagFileDir()
         {
-            string s = Environment.GetEnvironmentVariable("adaptivaserver");
-            if (Directory.Exists(s))
-            {
-                s = Path.Combine(s, "data", "DriverCatalogs");
-                if (!Directory.Exists(s))
-                {
-                    Directory.CreateDirectory(s);
-                }
-                return s;
-            }
-            else if (Directory.Exists(@"C:\Temp\"))
-            {
-                return @"C:\Temp\";
-            }
-            else
-                return @"C:\";
+            return dataDir;
         }
 
         public string[] GetConfigFileDir()
         {
             List<string> possibleDirs = new List<string>();
 
-            string s = Environment.GetEnvironmentVariable("DirverCatalogImportCfgDir");
-            if (s != null && Directory.Exists(s))
-            {
-                possibleDirs.Add(s);
-            }
-
-            possibleDirs.Add(rootDir);
+            possibleDirs.Add(cfgDir);
 
             return possibleDirs.ToArray();
         }
 
         public string GetVendorProfileOverrideFileDir()
         {
-            return rootDir;
+            return cfgDir;
         }
     }
 }

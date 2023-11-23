@@ -11,7 +11,9 @@ namespace NetFrameworkConsoleApp1
         static void Main(string[] args)
         {
             //XmlParser.TryTheParser();
-            CabFileWorker.extract();
+            //CabFileWorker.extract();
+            //CabExtractor.ExtractCabFile();
+            WsusImporter.test();
         }
     }
 }

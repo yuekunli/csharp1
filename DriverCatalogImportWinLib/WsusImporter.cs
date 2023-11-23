@@ -1,92 +1,183 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.UpdateServices.Administration;
+using System;
+using System.Collections.Concurrent;
 using System.Data.SqlClient;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.XPath;
-using System.IO;
-using System;
-using System.Threading.Tasks;
-using System.Linq;
-using System.Collections.Generic;
 
 namespace DriverCatalogImporter
 {
     internal class WsusImporter : IImporter
     {
-        private IUpdateServer wsus;
+        private readonly IUpdateServer wsus;
+        private readonly ILogger logger;
+        private readonly IDirFinder dirFinder;
+        private readonly string ServerName = "\\\\.\\pipe\\Microsoft##WID\\tsql\\query";
+        private readonly string DataBaseName = "SUSDB";
+        private readonly string ConnectionStr;
 
-        private ILogger logger;
-
-        private IDirFinder dirFinder;
-        public WsusImporter(ILogger _logger, IDirFinder _dirFinder)
+        public WsusImporter(ILogger _logger, IDirFinder _dirFinder) : this (_logger, _dirFinder, null) { }
+        public WsusImporter(ILogger _logger, IDirFinder _dirFinder, IPEndPoint _wsusEndPoint)
         {
-            wsus = AdminProxy.GetUpdateServer();
+            if (_wsusEndPoint != null)
+            {
+                if (_wsusEndPoint.Port != 0)
+                {
+                    wsus = AdminProxy.GetUpdateServer(_wsusEndPoint.Address.ToString(), false, _wsusEndPoint.Port);
+                }
+                else
+                {
+                    wsus = AdminProxy.GetUpdateServer(_wsusEndPoint.Address.ToString(), false);
+                }
+            }
+            else
+            {
+                wsus = AdminProxy.GetUpdateServer();
+            }
+            
+            ConnectionStr = string.Format("Server={0};Database={1};Integrated Security=sspi;Pooling=true", ServerName, DataBaseName);
             logger = _logger;
-            this.dirFinder = _dirFinder;
+            dirFinder = _dirFinder;
         }
 
-        public bool ImportFromXml(VendorProfile vp)
+        public async Task<bool> ImportFromXml(VendorProfile vp)
         {
             string xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
             string xmlFilePath = Path.Combine(dirFinder.GetCabExtractOutputDir(), xmlFileName);
+            if (File.Exists(xmlFilePath))
+            {
+                logger.LogDebug("[{vn}] : Start parsing and importing XML file", vp.Name);
+            }
+            else
+            {
+                logger.LogError("[{vn}] : XML file does not exist", vp.Name);
+                return false;
+            }
+
+            //IUpdateServer wsus = AdminProxy.GetUpdateServer();
+            ConcurrentQueue<SoftwareDistributionPackage> extractedSdps = new ConcurrentQueue<SoftwareDistributionPackage>();
+
+            XmlNamespaceManager nsmgr = new XmlNamespaceManager(new NameTable());
             try
             {
-                //IUpdateServer wsus = AdminProxy.GetUpdateServer();
-                System.Collections.Concurrent.ConcurrentQueue<SoftwareDistributionPackage> extractedSdps = new System.Collections.Concurrent.ConcurrentQueue<SoftwareDistributionPackage>();
-
-                XmlNamespaceManager nsmgr = new XmlNamespaceManager(new NameTable());
                 nsmgr.AddNamespace("", "http://www.w3.org/2001/XMLSchema");
                 nsmgr.AddNamespace("smc", "http://schemas.microsoft.com/sms/2005/04/CorporatePublishing/SystemsManagementCatalog.xsd");
+            }
+            catch (Exception e) 
+            {
+                logger.LogError(e, "[{vn}] : Fail to load XML namespace\n", vp.Name);
+                return false;
+            }
 
-                XmlDocument xmlDoc = new XmlDocument();
+            XmlDocument xmlDoc = new XmlDocument();
                 
-                try
+            try
+            {
+                xmlDoc.Load(xmlFilePath);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[{vn}] : Fail to load XML file\n", vp.Name);
+                return false;
+            }
+
+            try
+            {
+                var xmlNodeList = xmlDoc.SelectNodes("smc:SystemsManagementCatalog/smc:SoftwareDistributionPackage", nsmgr);
+                    
+                if (xmlNodeList != null)
                 {
-                    xmlDoc.Load(xmlFilePath);
+                    //var source = xmlNodeList.Cast<XmlNode>().ToList();
 
-                    var xmlNodeList = xmlDoc.SelectNodes("smc:SystemsManagementCatalog/smc:SoftwareDistributionPackage", nsmgr);
-
-                    Parallel.ForEach<XmlNode>(Enumerable.Cast<XmlNode>(xmlNodeList), node =>
+                    Parallel.ForEach(Enumerable.Cast<XmlNode>(xmlNodeList), node =>
                     {
                         IXPathNavigable nav = node;
                         XPathNavigator ntor = nav.CreateNavigator();
                         extractedSdps.Enqueue(new SoftwareDistributionPackage(ntor));
                     });
                 }
-                catch (Exception ex)
-                {
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, "[{vn}] : Fail to find relevant nodes in XML file\n", vp.Name);
+                return false;
+            }
 
+            SqlConnection sqlCon = new SqlConnection(ConnectionStr);
+            sqlCon.Open();
+            foreach(SoftwareDistributionPackage sdp in extractedSdps)
+            {
+                string tmpSdpFilePath = Path.Combine(dirFinder.GetTmpSdpFileDir(), sdp.PackageId.ToString());
+                tmpSdpFilePath = Path.ChangeExtension(tmpSdpFilePath, ".sdp");
+
+                sdp.Save(tmpSdpFilePath);
+                logger.LogDebug("[{vn}] : saved temporary sdp file {pkgid}", vp.Name, sdp.PackageId.ToString());
+
+                IPublisher publisher = wsus.GetPublisher(tmpSdpFilePath);
+                publisher.MetadataOnly = true;
+                try
+                {
+                    publisher.PublishPackage((string)null, (string)null, (string)null); // TODO: fix this warning
+                    logger.LogDebug("[{vn}] : Success, publish package {pkgid}", vp.Name, sdp.PackageId.ToString());
                 }
-
-                foreach(SoftwareDistributionPackage sdp in extractedSdps)
+                catch
                 {
-                    string tmpSdpFilePath = Path.Combine(dirFinder.GetTmpSdpFileDir(), sdp.PackageId.ToString());
-                    tmpSdpFilePath = Path.ChangeExtension(tmpSdpFilePath, ".sdp");
-
-                    sdp.Save(tmpSdpFilePath);
-
-                    IPublisher publisher = wsus.GetPublisher(tmpSdpFilePath);
-                    publisher.MetadataOnly = true;
+                    logger.LogInformation("[{vn}] : Fail, publish package {pkgid}, try revise package", vp.Name, sdp.PackageId.ToString());
                     try
                     {
-                        publisher.PublishPackage((string)null, (string)null, (string)null);
+                        publisher.RevisePackage();
+                        logger.LogInformation("[{vn}] : Success, revise package {pkgid}", vp.Name, sdp.PackageId.ToString());
                     }
                     catch (Exception ex)
                     {
-                        publisher.RevisePackage();
+                        logger.LogError(ex, "[{vn}] : Fail, revise package {pkgid}, no more attempt\n", vp.Name, sdp.PackageId.ToString());
                     }
-                    UpdateDatabase(sdp.PackageId.ToString());
-                    File.Delete(tmpSdpFilePath);
                 }
-                return true;
+                var t = UpdateDatabase(sdp.PackageId.ToString(), sqlCon);
+                await t;
+                if (!t.Result)
+                {
+                    logger.LogError("[{vn}] : Fail, update database", vp.Name);
+                }
+                File.Delete(tmpSdpFilePath);
+                logger.LogTrace("[{vn}] : Deleted temporary sdp file", vp.Name);
             }
-            catch(Exception ex)
-            {
-                return false;
-            }
+            sqlCon.Close();
+            return true;
         }
 
-        public bool ImportFromSdp(string sdpFilePath)
+        public async Task<bool> ImportFromSdp(VendorProfile vp)
+        {
+            string s = Path.Combine(dirFinder.GetCabExtractOutputDir(), vp.ExtractOutputFolderName, "V2");
+            if (Directory.Exists(s))
+            {
+                var dirInfo = new DirectoryInfo(s);
+                FileInfo[] files = dirInfo.GetFiles();
+                SqlConnection sqlCon = new SqlConnection(ConnectionStr);
+                sqlCon.Open();
+                try
+                {
+                    foreach (FileInfo file in files)
+                    {
+                        await ImportFromSdp(file.FullName, sqlCon);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    sqlCon.Close();
+                    logger.LogError(ex, "[{vn}] : Fail to import SDP files\n", vp.Name);
+                    return false;
+                }
+                sqlCon.Close();
+            }
+            return true;
+        }
+        private async Task<bool> ImportFromSdp(string sdpFilePath, SqlConnection sqlConnection)
         {
             try
             {
@@ -101,56 +192,31 @@ namespace DriverCatalogImporter
                     publisher.RevisePackage();
                 }
                 string sdpId = Path.GetFileNameWithoutExtension(sdpFilePath);
-                UpdateDatabase(sdpId);
+                await UpdateDatabase(sdpId, sqlConnection);
                 return true;
             }
             catch(Exception ex)
             {
+                logger.LogError(ex, "Fail to import SDP file, {file}\n", sdpFilePath);
                 return false;
             }
         }
 
-        /**
-         * What is this database?
-         */
-        private bool UpdateDatabase(string packageId)
+        private async Task<bool> UpdateDatabase(string packageId, SqlConnection sqlConnection)
         {
             try
             {
-                // Define the server name and database name for the SQL connection.
-                string ServerName = "\\\\.\\pipe\\Microsoft##WID\\tsql\\query";
-                string DataBaseName = "SUSDB";
+                string CommandText = "UPDATE [SUSDB].[dbo].[tbUpdate] SET [IsLocallyPublished] = 0 WHERE [UpdateID] = '" + packageId + "'";
 
-                // Log the start of the database connection process.
+                SqlCommand sqlCommand = new SqlCommand(CommandText, sqlConnection);
+
+                await sqlCommand.ExecuteNonQueryAsync();
                 
-
-                // Create a new SQL connection.
-                SqlConnection sqlConnection = new SqlConnection();
-
-                // Set the connection string for the SQL connection using the server and database names.
-                sqlConnection.ConnectionString = string.Format("Server={0};Database={1};Integrated Security=sspi;", (object)ServerName, (object)DataBaseName);
-
-                // Open the SQL connection.
-                sqlConnection.Open();
-
-                // Create a new SQL command.
-                SqlCommand sqlCommand = new SqlCommand();
-
-                // Set the connection for the SQL command to the previously opened SQL connection.
-                sqlCommand.Connection = sqlConnection;
-
-                // Set the command text to update the IsLocallyPublished field for the given ID.
-                sqlCommand.CommandText = "UPDATE [SUSDB].[dbo].[tbUpdate] SET [IsLocallyPublished] = 0 WHERE [UpdateID] = '" + packageId + "'";
-
-                // Execute the SQL command.
-                sqlCommand.ExecuteNonQuery();
-
-                // Return true indicating successful database update.
                 return true;
             }
             catch (Exception ex)
             {
-                // Return false indicating the database update was unsuccessful.
+                logger.LogError(ex, "Fail to udpate database, package ID: {pkgid}\n", packageId);
                 return false;
             }
         }

@@ -128,6 +128,7 @@
     <Compile Include="IImporter.cs" />
     <Compile Include="ProdDirFinder.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ServerDirFinder.cs" />
     <Compile Include="SimpleDirFinder.cs" />
     <Compile Include="VendorProfile.cs" />
     <Compile Include="WsusImporter.cs" />
