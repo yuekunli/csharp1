@@ -21,6 +21,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -72,6 +73,9 @@
     </Reference>
     <Reference Include="Microsoft.UpdateServices.Administration">
       <HintPath>..\..\..\..\..\..\ws\WSUSPub\WSUSPub\bin\Debug\Microsoft.UpdateServices.Administration.dll</HintPath>
+    </Reference>
+    <Reference Include="NReco.Logging.File, Version=1.1.7.0, Culture=neutral, PublicKeyToken=d6cccee409799e87, processorArchitecture=MSIL">
+      <HintPath>..\packages\NReco.Logging.File.1.1.7\lib\netstandard2.0\NReco.Logging.File.dll</HintPath>
     </Reference>
     <Reference Include="SevenZipSharp, Version=1.6.1.23, Culture=neutral, PublicKeyToken=c8ff6ba0184838bb, processorArchitecture=MSIL">
       <HintPath>..\packages\Squid-Box.SevenZipSharp.1.6.1.23\lib\net472\SevenZipSharp.dll</HintPath>
@@ -136,12 +140,6 @@
   <ItemGroup>
     <None Include="app.config" />
     <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\..\..\..\ws\nreco-logging\src\NReco.Logging.File\NReco.Logging.File.csproj">
-      <Project>{cbd1d1d7-adce-4c93-9fcf-09f88d9682d7}</Project>
-      <Name>NReco.Logging.File</Name>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

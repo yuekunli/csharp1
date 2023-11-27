@@ -17,12 +17,12 @@ namespace DriverCatalogImporter
             dirFinder = _dirFinder;
             try
             {
-                SevenZipBase.SetLibraryPath(Path.Combine(AppContext.BaseDirectory, "7z.dll")); // must use 7-zip 23.01, the version matters!
+                SevenZipBase.SetLibraryPath(Path.Combine(AppContext.BaseDirectory, "7z64.dll"));
             }
             catch (Exception ex)
             {
-                logger.LogCritical(ex, "Fail to find 7z.dll, which is necessary to extract cabinet files\n");
-                throw new Exception("Fail to find 7z.dll");
+                logger.LogCritical(ex, "Fail to find 64-bit 7z.dll, which is necessary to extract cabinet files\n");
+                throw new Exception("Fail to find 64-bit 7z.dll");
             }
         }
         public async Task<bool> ExtractXml(VendorProfile vp)

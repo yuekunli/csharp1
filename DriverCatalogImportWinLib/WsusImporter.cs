@@ -47,8 +47,17 @@ namespace DriverCatalogImporter
 
         public async Task<bool> ImportFromXml(VendorProfile vp)
         {
-            string xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
+            string xmlFileName;
+            if (!vp.Name.Equals("HP", StringComparison.CurrentCultureIgnoreCase))
+            {
+                xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
+            }
+            else
+            {
+                xmlFileName = Path.ChangeExtension(Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(vp.CabFileName)), ".xml");
+            }
             string xmlFilePath = Path.Combine(dirFinder.GetCabExtractOutputDir(), xmlFileName);
+
             if (File.Exists(xmlFilePath))
             {
                 logger.LogDebug("[{vn}] : Start parsing and importing XML file", vp.Name);
@@ -114,7 +123,7 @@ namespace DriverCatalogImporter
             {
                 string tmpSdpFilePath = Path.Combine(dirFinder.GetTmpSdpFileDir(), sdp.PackageId.ToString());
                 tmpSdpFilePath = Path.ChangeExtension(tmpSdpFilePath, ".sdp");
-
+                bool success= false;
                 sdp.Save(tmpSdpFilePath);
                 logger.LogDebug("[{vn}] : saved temporary sdp file {pkgid}", vp.Name, sdp.PackageId.ToString());
 
@@ -122,30 +131,56 @@ namespace DriverCatalogImporter
                 publisher.MetadataOnly = true;
                 try
                 {
-                    publisher.PublishPackage((string)null, (string)null, (string)null); // TODO: fix this warning
-                    logger.LogDebug("[{vn}] : Success, publish package {pkgid}", vp.Name, sdp.PackageId.ToString());
+                    wsus.GetUpdate(new UpdateRevisionId(sdp.PackageId, 0));
+                    logger.LogDebug("[{vn}] : get udpate {pkgid}", vp.Name, sdp.PackageId.ToString());
                 }
                 catch
                 {
-                    logger.LogInformation("[{vn}] : Fail, publish package {pkgid}, try revise package", vp.Name, sdp.PackageId.ToString());
-                    try
-                    {
-                        publisher.RevisePackage();
-                        logger.LogInformation("[{vn}] : Success, revise package {pkgid}", vp.Name, sdp.PackageId.ToString());
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError(ex, "[{vn}] : Fail, revise package {pkgid}, no more attempt\n", vp.Name, sdp.PackageId.ToString());
-                    }
+                    logger.LogDebug("[{vn}] : not get udpate {pkgid}", vp.Name, sdp.PackageId.ToString());
                 }
-                var t = UpdateDatabase(sdp.PackageId.ToString(), sqlCon);
-                await t;
-                if (!t.Result)
+                try
                 {
-                    logger.LogError("[{vn}] : Fail, update database", vp.Name);
+                    publisher.PublishPackage(null, null);
+                    logger.LogDebug("[{vn}] : Success, publish package {pkgid}", vp.Name, sdp.PackageId.ToString());
+                    success = true;
                 }
-                File.Delete(tmpSdpFilePath);
-                logger.LogTrace("[{vn}] : Deleted temporary sdp file", vp.Name);
+                catch (Exception e1)
+                {
+                    logger.LogError("[{vn}] : Fail, publish package {pkgid}, {error}\n", vp.Name, sdp.PackageId.ToString(), e1.Message);
+
+                    if (e1.Message.Contains("the following Prerequisites haven't been published yet"))
+                    {
+                        File.Delete(tmpSdpFilePath);
+                        logger.LogTrace("[{vn}] : Deleted temporary sdp file", vp.Name);
+                    }
+                    else
+                    {
+                        logger.LogInformation("[{vn}] : Fail, publish package {pkgid}, try revise package", vp.Name, sdp.PackageId.ToString());
+                        try
+                        {
+                            publisher.RevisePackage();
+                            logger.LogInformation("[{vn}] : Success, revise package {pkgid}", vp.Name, sdp.PackageId.ToString());
+                            success = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogError("[{vn}] : Fail, revise package {pkgid}, no more attempt,  {error}\n", vp.Name, sdp.PackageId.ToString(), ex.Message);
+                            File.Delete(tmpSdpFilePath);
+                            logger.LogTrace("[{vn}] : Deleted temporary sdp file", vp.Name);
+                        }
+                    }
+                }
+                if (success)
+                {
+                    var t = UpdateDatabase(sdp.PackageId.ToString(), sqlCon);
+                    await t;
+                    if (!t.Result)
+                    {
+                        logger.LogError("[{vn}] : Fail, update database", vp.Name);
+                    }
+                    File.Delete(tmpSdpFilePath);
+                    logger.LogTrace("[{vn}] : Deleted temporary sdp file", vp.Name);
+                }
             }
             sqlCon.Close();
             return true;
@@ -187,7 +222,7 @@ namespace DriverCatalogImporter
                 {
                     publisher.PublishPackage(null, null, null);
                 }
-                catch (Exception ex)
+                catch
                 {
                     publisher.RevisePackage();
                 }

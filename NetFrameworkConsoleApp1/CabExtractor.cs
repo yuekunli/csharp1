@@ -12,7 +12,7 @@ namespace NetFrameworkConsoleApp1
         public static void ExtractCabFile()
         {
             string outputDir = @"C:\Users\YuekunLi\Downloads\cab_import_test\a\";
-            SevenZipBase.SetLibraryPath(@"C:\Program Files (x86)\7-Zip\7z.dll");
+            SevenZipBase.SetLibraryPath(@"C:\Users\YuekunLi\Downloads\7z64.dll"); //@"C:\Program Files (x86)\7-Zip\7z.dll"
             using (SevenZipExtractor extractor = new SevenZipExtractor(@"C:\Users\YuekunLi\Downloads\cab_import_test\DellSDPCatalogPC.cab"))
             {
                 for (var i = 0; i < extractor.ArchiveFileData.Count; i++)

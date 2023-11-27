@@ -7,7 +7,6 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
-using System.Timers;
 
 namespace DriverCatalogImporter
 {
@@ -137,7 +136,7 @@ namespace DriverCatalogImporter
         // options about scheduling:
         private bool immediateRunAfterStart = true;
         private int runIntervalInSeconds = 3 * 60;
-        private int runTimeoutInSeconds = 1 * 60;
+        private int runTimeoutInSeconds = 300 * 60;
 
         // options about logging:
         private LogLevel minLogLevel = LogLevel.Information;
@@ -176,7 +175,7 @@ namespace DriverCatalogImporter
             }
 
             logger?.LogInformation("===========================================");
-            logger?.LogDebug("Initialize Third Part yDriver Catalog Importer, run as {mode}", isLaunchBackgroundService? "background Windows Service" : "console application");
+            logger?.LogDebug("Initialize Driver Catalog Importer, run as {mode}", isLaunchBackgroundService? "background Windows Service" : "console application");
 
             try
             {

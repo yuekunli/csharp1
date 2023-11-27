@@ -2,7 +2,7 @@
 {
     internal class ServerDirFinder : IDirFinder
     {
-        private readonly string rootDir;
+        private readonly string? rootDir;
 
         private readonly string dataDir;
 
