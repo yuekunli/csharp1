@@ -2,6 +2,7 @@
 using NReco.Logging.File;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Contracts;
 using System.Globalization;
 using System.IO;
 using System.Net;
@@ -74,12 +75,14 @@ namespace DriverCatalogImporter
         {
             Success_NoChange = 0,
             Success_Imported,
+            Partial_Success_Imported,
             Fail_CheckContentLength,
             Fail_Download,
             Fail_ExtractXml,
             Fail_ExtractSdp,
             Fail_Compare,
-            Fail_Import
+            All_Fail_Import,
+            Fail_Parsing_XML
         }
 
         private enum LogProvider
@@ -122,11 +125,11 @@ namespace DriverCatalogImporter
         // configuration options:
 
         // options about config file:
-        private bool shouldParseConfigFileOnEveryRun = true;
+        private bool parseConfigFileOnEveryRun = true;
 
         // options about vendor profile override
         private string vendorProfileOverrideFilePath = null;
-        private bool shouldParseVendorProfileOverrideOnEveryRun = false;
+        private bool parseVendorProfileOverrideOnEveryRun = true;
         private bool vendorProfileOverrideAdditiveOnly = true;
 
         // options about verboseness
@@ -139,14 +142,20 @@ namespace DriverCatalogImporter
         private int runTimeoutInSeconds = 300 * 60;
 
         // options about logging:
-        private LogLevel minLogLevel = LogLevel.Information;
+        private LogLevel minLogLevel = LogLevel.Debug;
 
         // options about WSUS
         private IPEndPoint wsusEndPoint = null;
-        private bool shouldUseWsusImport = true;
+        private bool useWsusImport = true;
+        private bool asyncProcessEachPackage = true;
+        private bool updateSusdbForVisibilityInConsole = false;
 
         // options about Proxy
         private Uri proxy = null;
+
+
+        // ------  End of Configuration Options ------
+
 
         public AImporter(bool isBackgroundSerive)
         {
@@ -155,8 +164,8 @@ namespace DriverCatalogImporter
             if (isLaunchBackgroundService)
                 dirFinder = new BackgroundServiceDirFinder(AppContext.BaseDirectory);
             else
-                dirFinder = new SimpleDirFinder(@"C:\Temp\");
-                //dirFinder = new ServerDirFinder();
+                //dirFinder = new SimpleDirFinder(@"C:\Temp\");
+                dirFinder = new ServerDirFinder();
 
             if (dirFinder == null)
             {
@@ -209,7 +218,7 @@ namespace DriverCatalogImporter
 
             try
             {
-                if (shouldUseWsusImport)
+                if (useWsusImport)
                     imp = new WsusImporter(loggerFactory.CreateLogger<WsusImporter>(), dirFinder, wsusEndPoint);
                 else
                     imp = new DefaultImporter(loggerFactory.CreateLogger<DefaultImporter>(), dirFinder);
@@ -220,7 +229,7 @@ namespace DriverCatalogImporter
                 throw new Exception("Fail to create importer");
             }
 
-            aTimer = new System.Timers.Timer();
+            //aTimer = new System.Timers.Timer();
         }
 
         private void InitializeVendors()
@@ -241,7 +250,7 @@ namespace DriverCatalogImporter
             });
 
             int fieldWidth = longestUrlLength + 3;
-            string formatS = "{0,-20}{1,-" + fieldWidth + "}{2,-15}{3,-12}{4,30}";
+            string formatS = "{0,-20}{1,-" + fieldWidth + "}{2,-15}{3,-12}{4,-30}";
             return formatS;
         }
 
@@ -282,15 +291,15 @@ namespace DriverCatalogImporter
 
         private void ParseConfigOptions(string k, string v)
         {
-            if (k.Equals("ShouldParseConfigFileOnEveryRun", StringComparison.CurrentCultureIgnoreCase))
+            if (k.Equals("ParseConfigFileOnEveryRun", StringComparison.CurrentCultureIgnoreCase))
             {
                 try
                 {
-                    shouldParseConfigFileOnEveryRun = bool.Parse(v);
+                    parseConfigFileOnEveryRun = bool.Parse(v);
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"ShouldParseConfigFileOnEveryRun\" option, it has to be True or False\n");
+                    logger?.LogError(e, "Invalid value for \"ParseConfigFileOnEveryRun\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("VendorProfileOverrideFilePath", StringComparison.CurrentCultureIgnoreCase))
@@ -304,15 +313,15 @@ namespace DriverCatalogImporter
                     logger?.LogDebug("Invalid vendor profile override file path: {0}", v);
                 }
             }
-            else if (k.Equals("ShouldParseVendorProfileOverrideOnEveryRun", StringComparison.CurrentCultureIgnoreCase))
+            else if (k.Equals("ParseVendorProfileOverrideOnEveryRun", StringComparison.CurrentCultureIgnoreCase))
             {
                 try
                 {
-                    shouldParseVendorProfileOverrideOnEveryRun = bool.Parse(v);
+                    parseVendorProfileOverrideOnEveryRun = bool.Parse(v);
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"ShouldParseVendorProfileOverrideOnEveryRun\" option, it has to be True or False\n");
+                    logger?.LogError(e, "Invalid value for \"ParseVendorProfileOverrideOnEveryRun\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("VendorProfileOverrideAdditiveOnly", StringComparison.CurrentCultureIgnoreCase))
@@ -418,15 +427,15 @@ namespace DriverCatalogImporter
                     logger?.LogError("Invalid value for \"MinLogLevel\" option, it has to be one of the possibilities: Trace, Debug, Information, Warning, Error, Critical, None");
                 }
             }
-            else if (k.Equals("ShouldUseWsusImport", StringComparison.CurrentCultureIgnoreCase))
+            else if (k.Equals("UseWsusImport", StringComparison.CurrentCultureIgnoreCase))
             {
                 try
                 {
-                    shouldUseWsusImport = bool.Parse(v);
+                    useWsusImport = bool.Parse(v);
                 }
                 catch (FormatException e)
                 {
-                    logger?.LogError(e, "Invalid value for \"ShouldUseWsusImport\" option, it has to be True or False\n");
+                    logger?.LogError(e, "Invalid value for \"UseWsusImport\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("WsusEndPoint", StringComparison.CurrentCultureIgnoreCase))
@@ -446,6 +455,29 @@ namespace DriverCatalogImporter
                 catch (Exception e)
                 {
                     logger?.LogError(e, "Invalid value for \"WsusEndPoint\" option, it has to be in the 1.1.1.1 or 1.1.1.1:80 format\n");
+                }
+            }
+            //shouldAsyncPublishEachPackage
+            else if (k.Equals("AsyncProcessEachPackage", StringComparison.CurrentCultureIgnoreCase))
+            {
+                try
+                {
+                    asyncProcessEachPackage = bool.Parse(v);
+                }
+                catch (FormatException e)
+                {
+                    logger?.LogError(e, "Invalid value for \"AsyncProcessEachPackage\" option, it has to be True or False\n");
+                }
+            }
+            else if (k.Equals("UpdateSusdbForVisibilityInConsole", StringComparison.CurrentCultureIgnoreCase))
+            {
+                try
+                {
+                    updateSusdbForVisibilityInConsole = bool.Parse(v);
+                }
+                catch (FormatException e)
+                {
+                    logger?.LogError(e, "Invalid value for \"UpdateSusdbForVisibilityInConsole\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("Proxy", StringComparison.CurrentCultureIgnoreCase))
@@ -698,18 +730,18 @@ namespace DriverCatalogImporter
             }
         }
 
-        public void RunOnce()
+        public async Task RunOnce()
         {
             if (isLaunchBackgroundService)
             {
                 logger?.LogInformation("===========================================");
             }
 
-            if (shouldParseConfigFileOnEveryRun)
+            if (parseConfigFileOnEveryRun)
             {
                 ParseConfigFile();
             }
-            if (shouldParseVendorProfileOverrideOnEveryRun)
+            if (parseVendorProfileOverrideOnEveryRun)
             {
                 ParseVendorProfileOverrideFile();
             }
@@ -731,6 +763,7 @@ namespace DriverCatalogImporter
                         Task.Run(async () =>
                         {
                             TimeSpan? interval = DateTime.Now - v.LastDownload;
+                            bool contentLengthDifferent = false;
                             if (interval?.TotalHours < 24)
                             {
                                 Task<bool> headerTask = dl.CheckCabSize(v);
@@ -746,6 +779,8 @@ namespace DriverCatalogImporter
                                     else
                                     {
                                         logger?.LogInformation("[{vn}] : old content-length: {oldlen}, new content-length: {newlen}", v.Name, v.OldContentLength, v.NewContentLength);
+                                        contentLengthDifferent = true;
+                                        // proceed to download cab file
                                     }
                                 }
                                 else
@@ -771,26 +806,31 @@ namespace DriverCatalogImporter
                                 return;
                             }
 
-
-                            try
+                            if (contentLengthDifferent)
                             {
-                                Task<bool> fcTask = fc.IsSame(v);
-                                await fcTask;
-                                if (fcTask.Result)
+                                v.HasChange = true;
+                            }
+                            else
+                            {
+                                try
                                 {
-                                    logger?.LogInformation("[{VendorName}] : Cab files are the same, no action", v.Name);
-                                    v.RunResult = RunResult.Success_NoChange;
+                                    Task<bool> fcTask = fc.IsSame(v);
+                                    await fcTask;
+                                    if (fcTask.Result)
+                                    {
+                                        logger?.LogInformation("[{VendorName}] : Cab files are the same, no action", v.Name);
+                                        v.RunResult = RunResult.Success_NoChange;
+                                        return;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger?.LogError(ex, "[{vendorname}] : Fail to compare cab files\n", v.Name);
+                                    v.RunResult = RunResult.Fail_Compare;
                                     return;
                                 }
+                                v.HasChange = true;
                             }
-                            catch (Exception ex)
-                            {
-                                logger?.LogError(ex, "[{vendorname}] : Fail to compare cab files\n", v.Name);
-                                v.RunResult = RunResult.Fail_Compare;
-                                return;
-                            }
-                            v.HasChange = true;
-                            
                             
                             Task<bool> ceTask = ce.ExtractXml(v);
                             await ceTask;
@@ -803,54 +843,69 @@ namespace DriverCatalogImporter
                             }
 
 
-                            var impTask = imp.ImportFromXml(v);
-                            if (impTask.Result)
-                            {
-                                logger?.LogInformation("[{VendorName}] : Success, import XML file", v.Name);
-                                v.RunResult = RunResult.Success_Imported;
-                            }
-                            else
-                            {
-                                logger?.LogError("[{VendorName}] : Failure, import XML file", v.Name);
-                                v.RunResult = RunResult.Fail_Import;
-                            }
 
-
-                            bool r = ce.DeleteXml(v);
-                            if (r)
-                            {
-                                logger?.LogInformation("[{VendorName}] : Deleted temporary XML file", v.Name);
-                            }
-                            else
-                            {
-                                logger?.LogError("[{vn}] : Fail to delete temporary XML file", v.Name);
-                            }
-                        })
-                    );
+                        }) // Task.Run( async () => {
+                    ); // tasks.Add
                 }
                 else
                 {
                     logger?.LogInformation("[{VendorName}] : Not eligible, skip", v.Name);
                 }
-            }
+            } // foreach (VendorProfile v in vendors)
             try
             {
-                bool result = Task.WaitAll(tasks.ToArray(), runTimeoutInSeconds * 1000);
-                // Synchronously wait, if this is run as a console application, synchronous waiting keeps
-                // the main thread from exiting. 
-                if (result)
-                {
-                    logger?.LogInformation("Run finish in time");
-                }
-                else
-                {
-                    logger?.LogError("Run Error");
-                }
+                await Task.WhenAll(tasks);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Run Error\n");
+                logger?.LogError(ex, "Error before invoking WSUS\n");
             }
+
+            foreach(VendorProfile v in vendors)
+            {
+                if (v.Eligible)
+                {
+                    if (v.HasChange)
+                    {
+                        var impTask = imp.ImportFromXml(v, new ImportInstructions(asyncProcessEachPackage, updateSusdbForVisibilityInConsole));
+                        if (impTask.Result.Total > 0)
+                        {
+                            if (impTask.Result.Total == impTask.Result.Success)
+                            {
+                                logger?.LogInformation("[{VendorName}] : Success, import from XML file", v.Name);
+                                v.RunResult = RunResult.Success_Imported;
+                            }
+                            else if (impTask.Result.Total > impTask.Result.Success && impTask.Result.Success > 0)
+                            {
+                                logger?.LogInformation("[{vn}] : Partial Success, import from XML file", v.Name);
+                                v.RunResult = RunResult.Partial_Success_Imported;
+                            }
+                            else if (impTask.Result.Success == 0)
+                            {
+                                logger?.LogCritical("[{vn}] : All Fail, import from XML file", v.Name);
+                                v.RunResult = RunResult.All_Fail_Import;
+                            }
+                        }
+                        else
+                        {
+                            logger?.LogError("[{VendorName}] : Failure, import XML file", v.Name);
+                            v.RunResult = RunResult.Fail_Parsing_XML;
+                        }
+                        logger?.LogInformation("[{vn}] : Import result: Total: {t}, Success: {s}, Fail: {f}", v.Name, impTask.Result.Total, impTask.Result.Success, impTask.Result.Failure);
+
+                        bool r = ce.DeleteXml(v);
+                        if (r)
+                        {
+                            logger?.LogInformation("[{VendorName}] : Deleted temporary XML file", v.Name);
+                        }
+                        else
+                        {
+                            logger?.LogError("[{vn}] : Fail to delete temporary XML file", v.Name);
+                        }
+                    }
+                }
+            }
+
             WriteFlagFile();
             CleanupAndRenameDir();
             

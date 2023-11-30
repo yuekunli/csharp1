@@ -12,8 +12,9 @@ namespace NetFrameworkConsoleApp1
         {
             //XmlParser.TryTheParser();
             //CabFileWorker.extract();
-            CabExtractor.ExtractCabFile();
+            //CabExtractor.ExtractCabFile();
             //WsusImporter.test();
+            DriverCatalogImporter.WsusImporterTestWrapper.TestWsusImporter();
         }
     }
 }

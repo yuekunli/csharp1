@@ -4,6 +4,6 @@ namespace DriverCatalogImporter
 {
     internal interface IImporter
     {
-        Task<bool> ImportFromXml(VendorProfile vp);
+        Task<ImportStats> ImportFromXml(VendorProfile vp, ImportInstructions instruct);
     }
 }

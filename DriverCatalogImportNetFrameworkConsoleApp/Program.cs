@@ -1,4 +1,5 @@
 ﻿using DriverCatalogImporter;
+using System.Threading.Tasks;
 
 namespace DriverCatalogImportNetFrameworkConsoleApp
 {
@@ -6,7 +7,8 @@ namespace DriverCatalogImportNetFrameworkConsoleApp
     {
         static void Main(string[] args)
         {
-            new AImporter(false).RunOnce();
+            Task t = new AImporter(false).RunOnce();
+            t.Wait();
         }
     }
 }

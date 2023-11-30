@@ -13,7 +13,7 @@ namespace DriverCatalogImporter
             logger = _logger;
             this.dirFinder = _dirFinder;
         }
-        public Task<bool> ImportFromXml(VendorProfile vp)
+        public Task<ImportStats> ImportFromXml(VendorProfile vp, ImportInstructions instruct)
         {
             string xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
             string xmlFilePath = Path.Combine(dirFinder.GetCabExtractOutputDir(), xmlFileName);
@@ -25,7 +25,7 @@ namespace DriverCatalogImporter
             {
                 logger.LogError("[{VendorName}] : ImportFromXml, XML file does not exist", vp.Name);
             }
-            return Task<bool>.FromResult(true);
+            return Task<ImportStats>.FromResult(new ImportStats(1, 1, 0));
         }
 
         public bool ImportFromSdp(string sdpFilePath)

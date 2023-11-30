@@ -130,12 +130,15 @@
     <Compile Include="FileComparer.cs" />
     <Compile Include="IDirFinder.cs" />
     <Compile Include="IImporter.cs" />
+    <Compile Include="ImportInstructions.cs" />
+    <Compile Include="ImportStats.cs" />
     <Compile Include="ProdDirFinder.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ServerDirFinder.cs" />
     <Compile Include="SimpleDirFinder.cs" />
     <Compile Include="VendorProfile.cs" />
     <Compile Include="WsusImporter.cs" />
+    <Compile Include="WsusImporterTestWrapper.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
