@@ -3,6 +3,7 @@ using Microsoft.UpdateServices.Administration;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
@@ -11,8 +12,35 @@ using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.XPath;
 
-namespace DriverCatalogImporter
+namespace DriverCatalogImporter 
 {
+    internal class SinglePackagePublishInstruction
+    {
+        public VendorProfile Vp { get; set; }
+
+        public bool CreateTempSdpFile { get; set; }
+        public bool DeleteTempSdpFile { get; set; }
+        public string TempSdpFilePath { get; set; }
+
+        public bool ArtificiallyMarshalDetectoid { get; set; }
+
+        public bool UpdateSusdbForVisibility { get; set; }
+        public bool AsyncUpdateSusdb {  get; set; }
+        public SqlConnection SqlCon { get; set; }
+
+        public SinglePackagePublishInstruction(VendorProfile vp, bool createTempSdpFile, bool deleteTempSdpFile, string tempSdpFilePath, bool artificiallyMarshalDetectoid, bool updateSusdbForVisibility, bool asyncUpdateSusdb, SqlConnection sqlCon)
+        {
+            CreateTempSdpFile = createTempSdpFile;
+            DeleteTempSdpFile = deleteTempSdpFile;
+            UpdateSusdbForVisibility = updateSusdbForVisibility;
+            AsyncUpdateSusdb = asyncUpdateSusdb;
+            SqlCon = sqlCon;
+            TempSdpFilePath = tempSdpFilePath;
+            Vp = vp;
+            ArtificiallyMarshalDetectoid = artificiallyMarshalDetectoid;
+        }
+    }
+
     internal class WsusImporter : IImporter
     {
         private readonly IUpdateServer wsus;
@@ -21,7 +49,8 @@ namespace DriverCatalogImporter
         private readonly string ServerName = "\\\\.\\pipe\\Microsoft##WID\\tsql\\query";
         private readonly string DataBaseName = "SUSDB";
         private readonly string ConnectionStr;
-
+        private readonly int batchSize = 500;
+        
         public WsusImporter(ILogger _logger, IDirFinder _dirFinder) : this (_logger, _dirFinder, null) { }
         public WsusImporter(ILogger _logger, IDirFinder _dirFinder, IPEndPoint _wsusEndPoint)
         {
@@ -29,7 +58,7 @@ namespace DriverCatalogImporter
             {
                 if (_wsusEndPoint.Port != 0)
                 {
-                    wsus = AdminProxy.GetUpdateServer(_wsusEndPoint.Address.ToString(), false, _wsusEndPoint.Port);
+                    wsus = AdminProxy.GetUpdateServer(_wsusEndPoint.Address.ToString(), false, _wsusEndPoint.Port); // AdminProxy thread safty info, see Microsoft doc
                 }
                 else
                 {
@@ -46,81 +75,259 @@ namespace DriverCatalogImporter
             dirFinder = _dirFinder;
         }
 
-
-        private bool PublishOnePackage(VendorProfile vp, SoftwareDistributionPackage sdp, SqlConnection sqlCon)
+        private void MarshalDetectoid(SoftwareDistributionPackage sdp, VendorProfile vp)
         {
-            string tmpSdpFilePath = Path.Combine(dirFinder.GetTmpSdpFileDir(), sdp.PackageId.ToString());
-            tmpSdpFilePath = Path.ChangeExtension(tmpSdpFilePath, ".sdp");
-            bool success = false;
-            sdp.Save(tmpSdpFilePath);
-            logger.LogTrace("[{vn}] : saved temporary sdp file {pkgid}", vp.Name, sdp.PackageId.ToString());
+            InstallableItem item = new InstallableItem
+            {
+                Id = Guid.NewGuid(),
+                IsInstallableApplicabilityRule = @"<lar:False />",
+                InstallBehavior = new InstallBehavior
+                {
+                    CanRequestUserInput = false,
+                    RequiresNetworkConnectivity = false,
+                    Impact = InstallationImpact.Normal,
+                    RebootBehavior = RebootBehavior.NeverReboots
+                },
+                OriginalSourceFile = new FileForInstallableItem
+                {
+                    Digest = "2YJspaMCUFCwXw7vwswjTo9RusE=",
+                    FileName = "dummy.exe",
+                    OriginUri = new Uri(@"https://download.dummy.com/dummy"),
+                    Size = 123456,
+                    Modified = new DateTime(2020, 1, 1, 1, 1, 1)
+                }
+            };
+            item.Languages.Add("en");
+            sdp.InstallableItems.Add(item);
+            sdp.PackageUpdateType = PackageUpdateType.Software;
+            sdp.Title = "[DETECTOID] " + sdp.Title;
+            logger.LogWarning("[{vn}] : Detectoid is marshaled, {pkgid}", vp.Name, sdp.PackageId.ToString());
+        }
 
-            IPublisher publisher = wsus.GetPublisher(tmpSdpFilePath);
-            publisher.MetadataOnly = true;
-            bool pkgExist = true;
-            try
+        /**
+         * Calling GetUpdate to check the existence before calling DeleteUdpate doesn't really gain much.
+         * Directly calling DeleteUpdate gets the job done, and if the input update doesn't exist,
+         * DeleteUpdate throws WsusObjectNotFoundException, which is the same effect as calling GetUpdate
+         */
+        private bool DeleteOnePackage(VendorProfile vp, SoftwareDistributionPackage sdp)
+        {
+            bool success;
+            /*
+            if (sdp.PackageUpdateType != PackageUpdateType.Detectoid)
             {
-                wsus.GetUpdate(new UpdateRevisionId(sdp.PackageId, 0));
-                logger.LogTrace("[{vn}] : yes get udpate {pkgid}", vp.Name, sdp.PackageId.ToString());
-            }
-            catch
-            {
-                logger.LogTrace("[{vn}] : not get udpate {pkgid}", vp.Name, sdp.PackageId.ToString());
-                pkgExist = false;
-            }
-
-            if (!pkgExist)
-            {
+                // if the sdp is a detectoid, even if it is published prior to this query, GetUpdate throws WsusObjectNotFoundException
+                // So only do the GetUpdate check when sdp is not a detectoid.
+                // What is the correct way to check whether a detectoid is on server or not???
+                // Two other facts:
+                // (1). Calling DeleteUpdate with detectoid throws no exception if the detectoid really exists on the server.
+                //      Does it work? Yes, because if call the DeleteUpdate on the same detectoid again, it throws WsusOjbectNotFoundException
+                // (2). publishing a detectoid multiple times do seem to go through
                 try
                 {
-                    publisher.PublishPackage(null, null);
-                    logger.LogInformation("[{vn}] : Success, publish package {pkgid}", vp.Name, sdp.PackageId.ToString());
-                    success = true;
+                    wsus.GetUpdate(new UpdateRevisionId(sdp.PackageId, 0));
+                    logger.LogTrace("[{vn}] : yes get udpate {pkgid}", vp.Name, sdp.PackageId.ToString());
                 }
-                catch (Exception e1)
+                catch (WsusObjectNotFoundException)
                 {
-                    logger.LogError(e1, "[{vn}] : Fail, publish package {pkgid}\n", vp.Name, sdp.PackageId.ToString());
-                    //File.Delete(tmpSdpFilePath);
-                    //logger.LogTrace("[{vn}] : Deleted temporary sdp file", vp.Name);
+                    logger.LogInformation("[{vn}] : Success, Delete, No action, package not exist {pkgid}", vp.Name, sdp.PackageId.ToString());
+                    return true;
                 }
+                catch (Exception e)
+                {
+                    logger.LogError(e, "[{vn}] : Fail, query package existence {pkgid}", vp.Name, sdp.PackageId.ToString());
+                    return false;
+                }
+            }
+            */
+            try
+            {
+                wsus.DeleteUpdate(sdp.PackageId);
+                logger.LogInformation("[{vn}] : Success, delete package {pkgid}", vp.Name, sdp.PackageId.ToString());
+                success = true;
+            }
+            catch (WsusObjectNotFoundException)
+            {
+                logger.LogInformation("[{vn}] : Success, Delete, No action, package not exist {pkgid}", vp.Name, sdp.PackageId.ToString());
+                success = true;
+            }
+            catch (Exception e1)
+            {
+                logger.LogError(e1, "[{vn}] : Fail, delete package {pkgid}\n", vp.Name, sdp.PackageId.ToString());
+                success = false;
+            }
+
+            return success;
+        }
+
+        private async Task<bool> PublishOnePackage(SoftwareDistributionPackage sdp, SinglePackagePublishInstruction instruct)
+        {
+            bool success = false;
+            bool pkgExist;
+
+            string tmpSdpFilePath;
+            if (instruct.CreateTempSdpFile)
+            {
+                tmpSdpFilePath = Path.Combine(dirFinder.GetTmpSdpFileDir(), sdp.PackageId.ToString());
+                tmpSdpFilePath = Path.ChangeExtension(tmpSdpFilePath, ".sdp");
+            }
+            else
+            {
+                tmpSdpFilePath = instruct.TempSdpFilePath;
+            }
+
+            if (sdp.PackageUpdateType == PackageUpdateType.Detectoid)
+            {
+                pkgExist = wsus.IsPrerequisitePresent(sdp.PackageId); // if it's detectoid, this is the way to check its own existence
             }
             else
             {
                 try
                 {
+                    wsus.GetUpdate(new UpdateRevisionId(sdp.PackageId, 0));  // IUpdateServer thread safty info not provided in Microsoft doc
+                    logger.LogTrace("[{vn}] : udpate exist {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
+                    pkgExist = true;
+                }
+                catch
+                {
+                    logger.LogTrace("[{vn}] : udpate not exist {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
+                    pkgExist = false;
+                }
+            }
+
+            if (pkgExist)
+            {
+                try
+                {
+                    if (sdp.PackageUpdateType == PackageUpdateType.Detectoid && instruct.ArtificiallyMarshalDetectoid)
+                    {
+                        MarshalDetectoid(sdp, instruct.Vp);
+                    }
+                    if (instruct.CreateTempSdpFile)
+                    {
+                        sdp.Save(tmpSdpFilePath);
+                        logger.LogTrace("[{vn}] : saved temporary sdp file {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
+                    }
+                    IPublisher publisher = wsus.GetPublisher(tmpSdpFilePath);
+                    if (sdp.PackageUpdateType == PackageUpdateType.Detectoid || sdp.ProductNames.Contains("Bundles"))
+                    {
+                        publisher.MetadataOnly = false;
+                    }
+                    else
+                    {
+                        publisher.MetadataOnly = true;
+                    }
                     publisher.RevisePackage();
-                    logger.LogInformation("[{vn}] : Success, revise package {pkgid}", vp.Name, sdp.PackageId.ToString());
+                    logger.LogInformation("[{vn}] : Success, revise package {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
                     success = true;
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "[{vn}] : Fail, revise package {pkgid}\n", vp.Name, sdp.PackageId.ToString());
-                    //File.Delete(tmpSdpFilePath);
-                    //logger.LogTrace("[{vn}] : Deleted temporary sdp file", vp.Name);
+                    logger.LogError(ex, "[{vn}] : Fail, revise package {pkgid}\n", instruct.Vp.Name, sdp.PackageId.ToString());
                 }
             }
-            File.Delete(tmpSdpFilePath);
-            logger.LogTrace("[{vn}] : Deleted temporary sdp file", vp.Name);
-
-            if (sqlCon != null && (!pkgExist)&&success)
+            else
             {
-
-                //var t = UpdateDatabase(sdp.PackageId.ToString(), sqlCon);
-                //await t;
-                //if (!t.Result)
-                //{
-                //    logger.LogError("[{vn}] : Fail, update database", vp.Name);
-                //}
-                bool r = UpdateDatabase(sdp.PackageId.ToString(), sqlCon);
-                if (!r)
+                bool isPreReqDefined, isPreReqOnWsus = true;
+                var prereq = sdp.Prerequisites;
+                if (prereq != null && prereq.Count() > 0)
                 {
-                    logger.LogError("[{vn}] : Fail, update database", vp.Name);
+                    isPreReqDefined = true;
+                    try
+                    {
+                        IList<PrerequisiteGroup> prereqGroup = sdp.Prerequisites;
+                        foreach(PrerequisiteGroup group in prereqGroup)
+                        {
+                            IList<Guid> ids = group.Ids;
+                            foreach(Guid id in ids)
+                            {
+                                if (!wsus.IsPrerequisitePresent(id))
+                                {
+                                    isPreReqOnWsus = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogError(e, "[{vn}] : Fail, inquire prerequisite, {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
+                        return false;
+                    }
+                }
+                else
+                {
+                    isPreReqDefined = false;
+                    logger.LogTrace("[{vn}] : package has no prerequisite {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
+                }
+
+                try
+                {
+                    if ((!isPreReqDefined) || (isPreReqDefined && isPreReqOnWsus))
+                    {
+                        if (sdp.PackageUpdateType == PackageUpdateType.Detectoid && instruct.ArtificiallyMarshalDetectoid)
+                        {
+                            MarshalDetectoid(sdp, instruct.Vp);
+                        }
+                        if (instruct.CreateTempSdpFile)
+                        {
+                            sdp.Save(tmpSdpFilePath);
+                            logger.LogTrace("[{vn}] : saved temporary sdp file {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
+                        }
+                        IPublisher publisher = wsus.GetPublisher(tmpSdpFilePath);
+
+                        if (sdp.PackageUpdateType == PackageUpdateType.Detectoid || sdp.ProductNames.Contains("Bundles"))
+                        {
+                            publisher.MetadataOnly = false;
+                        }
+                        else
+                        {
+                            publisher.MetadataOnly = true;
+                        }
+                        
+                        publisher.PublishPackage(null, null);
+                        logger.LogInformation("[{vn}] : Success, publish package {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
+                        success = true;
+                    }
+                    else
+                    {
+                        logger.LogError("[{vn}] : Fail, publish package {pkgid}, prerequisite missing", instruct.Vp.Name, sdp.PackageId.ToString());
+                        return false;
+                    }
+                }
+                catch (Exception e1)
+                {
+                    logger.LogError(e1, "[{vn}] : Fail, publish package {pkgid}\n", instruct.Vp.Name, sdp.PackageId.ToString());
+                }
+            }
+            if (instruct.DeleteTempSdpFile)
+            {
+                File.Delete(tmpSdpFilePath);
+                logger.LogTrace("[{vn}] : Deleted temporary sdp file", instruct.Vp.Name);
+            }
+            if (instruct.UpdateSusdbForVisibility && (!pkgExist) && success)
+            {
+                if (instruct.AsyncUpdateSusdb)
+                {
+                    var t = UpdateDatabaseAsync(sdp.PackageId.ToString(), instruct.SqlCon);
+                    await t;
+                    if (!t.Result)
+                    {
+                        logger.LogError("[{vn}] : Fail, update database", instruct.Vp.Name);
+                    }
+                }
+                else
+                {
+                    bool r = UpdateDatabase(sdp.PackageId.ToString(), instruct.SqlCon);
+                    if (!r)
+                    {
+                        logger.LogError("[{vn}] : Fail, update database", instruct.Vp.Name);
+                    }
                 }
             }
             return success;
         }
 
-        public async Task<ImportStats> ImportFromXml(VendorProfile vp, ImportInstructions instruct)
+        public ImportStats ImportFromXml(VendorProfile vp, ImportInstructions instruct)
         {
             string xmlFileName;
             if (!vp.Name.Equals("HP", StringComparison.CurrentCultureIgnoreCase))
@@ -140,11 +347,11 @@ namespace DriverCatalogImporter
             else
             {
                 logger.LogError("[{vn}] : XML file does not exist", vp.Name);
-                return new ImportStats();
+                return new ImportStats(); //Task.FromResult(new ImportStats());
             }
 
             ConcurrentQueue<SoftwareDistributionPackage> extractedSdps = new ConcurrentQueue<SoftwareDistributionPackage>();
-
+            //LinkedList<SoftwareDistributionPackage> extractedSdps = new LinkedList<SoftwareDistributionPackage>();
             XmlNamespaceManager nsmgr = new XmlNamespaceManager(new NameTable());
             try
             {
@@ -154,7 +361,7 @@ namespace DriverCatalogImporter
             catch (Exception e) 
             {
                 logger.LogError(e, "[{vn}] : Fail to load XML namespace\n", vp.Name);
-                return new ImportStats();
+                return  new ImportStats();  //Task.FromResult(new ImportStats());
             }
 
             XmlDocument xmlDoc = new XmlDocument();
@@ -166,7 +373,7 @@ namespace DriverCatalogImporter
             catch (Exception ex)
             {
                 logger.LogError(ex, "[{vn}] : Fail to load XML file\n", vp.Name);
-                return new ImportStats();
+                return new ImportStats(); //Task.FromResult(new ImportStats());
             }
 
             try
@@ -175,126 +382,467 @@ namespace DriverCatalogImporter
                     
                 if (xmlNodeList != null)
                 {
-                    //var source = xmlNodeList.Cast<XmlNode>().ToList();
-
-                    Parallel.ForEach(Enumerable.Cast<XmlNode>(xmlNodeList), node =>
+                    Parallel.ForEach(xmlNodeList.Cast<XmlNode>(), node =>
                     {
-                        IXPathNavigable nav = node;
-                        XPathNavigator ntor = nav.CreateNavigator();
-                        extractedSdps.Enqueue(new SoftwareDistributionPackage(ntor));
+                        XPathNavigator navigator = node.CreateNavigator();
+                        extractedSdps.Enqueue(new SoftwareDistributionPackage(navigator)); 
+                        // this constructor is obsolete, but the constructor that is not obsolete does not work!
+                        
                     });
+                    //foreach(XmlNode node in xmlNodeList)
+                    //{
+                    //    XPathNavigator navigator = node.CreateNavigator();
+                    //    extractedSdps.AddLast(new SoftwareDistributionPackage(navigator));
+                    //}
+                }
+                else
+                {
+                    logger.LogWarning("[{vn}] : no software distribution package in XML file, please check the XML file", vp.Name);
+                    return new ImportStats();
                 }
             }
             catch (Exception e)
             {
                 logger.LogError(e, "[{vn}] : Fail to find relevant nodes in XML file\n", vp.Name);
-                return new ImportStats();
+                return new ImportStats(); //Task.FromResult(new ImportStats());
             }
-            ImportStats stats = new ImportStats();
-            stats.Total = extractedSdps.Count();
-            logger.LogInformation("[{vn}] : Total software distribution packages: {t}", vp.Name, extractedSdps.Count());
 
+            ImportStats stats = new ImportStats
+            {
+                Total = extractedSdps.Count()
+            };
+            
+            logger.LogInformation("[{vn}] : Total software distribution packages: {t}", vp.Name, extractedSdps.Count());
 
             SqlConnection sqlCon = null;
             if (instruct.UpdateSusdbForVisibilityInConsole)
             {
                 sqlCon = new SqlConnection(ConnectionStr);
                 sqlCon.Open();
+                logger.LogInformation("[{vn}] : SQL connection is opened", vp.Name);
             }
-            if (instruct.AsyncProcessEachPackage)
+
+            
+            if (vp.Name.Equals("Lenovo", StringComparison.CurrentCultureIgnoreCase) && instruct.AsyncProcessEachPackage && instruct.OnlyOneDetectoidInLenovo)
             {
-                List<Task<bool>> tasks = new List<Task<bool>>();
-
-                foreach (SoftwareDistributionPackage sdp in extractedSdps)
+                logger.LogCritical("[{vn}] : Async process packages is selected, catalog may have prerequisites implications, program is instructed that there is only 1 detectoid in catalog, need to process the detectoid first then async process other packages", vp.Name);
+                if (instruct.PublishOrDelete)
                 {
-                    tasks.Add(Task.Run(()=>PublishOnePackage(vp, sdp, sqlCon)));
-
-                }
-                Task.WaitAll(tasks.ToArray());
-                foreach(Task<bool> t in tasks)
-                {
-                    if (t.Result)
+                    foreach (SoftwareDistributionPackage sdp in extractedSdps)
                     {
-                        stats.Success++;
+                        if (sdp.PackageUpdateType == PackageUpdateType.Detectoid)
+                        {
+                            SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, true, true, null, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+
+                            Task<bool> t = PublishOnePackage(sdp, singlePkgInstruct);
+                            t.Wait();
+                            if (t.Result)
+                                stats.Success++;
+                            else
+                                stats.Failure++;
+                            break;
+                        }
                     }
-                    else
-                        stats.Failure++;
+
+                    var sdpArray = extractedSdps.ToArray();
+                    int i = 0, batch = 1;
+                    while (i < sdpArray.Length)
+                    {
+                        LinkedList<Task<bool>> tasks = new LinkedList<Task<bool>>();
+
+                        for (; i < batch * batchSize && i < sdpArray.Length; i++)
+                        {
+                            var sdp = sdpArray[i];
+                            if (sdp.PackageUpdateType != PackageUpdateType.Detectoid)
+                            {
+                                SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, true, true, null, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+                                tasks.AddLast(PublishOnePackage(sdp, singlePkgInstruct));
+                            }
+                        }
+                        Task.WaitAll(tasks.ToArray());
+                        foreach (Task<bool> t in tasks)
+                        {
+                            if (t.Result)
+                            {
+                                stats.Success++;
+                            }
+                            else
+                                stats.Failure++;
+                        }
+                        batch++;
+                    }
                 }
-            }
-            else
-            {
-                foreach (SoftwareDistributionPackage sdp in extractedSdps)
+                else // delete
                 {
-                    bool r = PublishOnePackage(vp, sdp, sqlCon);
-                    await Task.Delay(100);
+                    var sdpArray = extractedSdps.ToArray();
+                    int i = 0, batch = 1;
+                    int indexOfDetectoid = 0;
+                    while (i < sdpArray.Length)
+                    {
+                        LinkedList<Task<bool>> tasks = new LinkedList<Task<bool>>();
+
+                        for (; i < batch * batchSize && i < sdpArray.Length; i++)
+                        {
+                            var sdp = sdpArray[i];
+                            if (sdp.PackageUpdateType != PackageUpdateType.Detectoid)
+                            {
+                                SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, true, true, null, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+                                tasks.AddLast(Task.Run(() => DeleteOnePackage(vp, sdp)));
+                            }
+                            else
+                            { indexOfDetectoid = i; }
+                        }
+                        Task.WaitAll(tasks.ToArray());
+                        foreach (Task<bool> t in tasks)
+                        {
+                            if (t.Result)
+                            {
+                                stats.Success++;
+                            }
+                            else
+                                stats.Failure++;
+                        }
+                        batch++;
+                    }
+
+                    bool r = DeleteOnePackage(vp, sdpArray[indexOfDetectoid]);
                     if (r)
                         stats.Success++;
                     else
                         stats.Failure++;
                 }
+                return stats;
+            }
+
+            if (vp.Name.Equals("Lenovo", StringComparison.CurrentCultureIgnoreCase) || vp.Name.Equals("DellServer", StringComparison.CurrentCultureIgnoreCase))
+            {
+                if (instruct.AsyncProcessEachPackage)
+                    logger.LogCritical("[{vn}] : Async processing packages is selected, but catalog has prerequisites implications, override to sync process", vp.Name);
+
+                instruct.AsyncProcessEachPackage = false;
+
+                SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, true, true, null, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+
+                try
+                {
+                    if (instruct.PublishOrDelete)
+                    {
+                        DfsPublish(extractedSdps, singlePkgInstruct, stats);
+                    }
+                    else
+                    {
+                        DfsDelete(extractedSdps, singlePkgInstruct, stats);
+                    }
+                }
+                catch (Exception e)
+                {
+                    logger.LogError(e, "[{vn}] : Fail, publish/delete with ordering", vp.Name);
+                }
+                return stats;
+            }
+            
+
+            if (instruct.AsyncProcessEachPackage)
+            {
+                var sdpArray = extractedSdps.ToArray();
+                int i = 0, batch = 1;
+                while (i < sdpArray.Length)
+                {
+                    LinkedList<Task<bool>> tasks = new LinkedList<Task<bool>>();
+
+                    for (; i < batch*batchSize && i < sdpArray.Length ; i++)
+                    {
+                        if (instruct.PublishOrDelete)
+                        {
+                            // must not put 'i' inside the lambda, because lambda is not synchronously invoked,
+                            // many iterations could have passed by when lambda is invoked, and when it's invoked, i's value is undetermined
+                            var sdp = sdpArray[i];
+                            SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, true, true, null,instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+                            tasks.AddLast(PublishOnePackage(sdp, singlePkgInstruct));
+                        }
+                        else
+                        {
+                            var sdp = sdpArray[i];
+                            tasks.AddLast(Task.Run(() => DeleteOnePackage(vp, sdp)));
+                        }
+                    }
+                    Task.WaitAll(tasks.ToArray());
+                    foreach (Task<bool> t in tasks)
+                    {
+                        if (t.Result)
+                        {
+                            stats.Success++;
+                        }
+                        else
+                            stats.Failure++;
+                    }
+                    batch++;
+                }
+            }
+            else
+            {
+                SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, true, true, null, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+                foreach (SoftwareDistributionPackage sdp in extractedSdps)
+                {
+                    if (instruct.PublishOrDelete)
+                    {                        
+                        Task<bool> t = PublishOnePackage(sdp, singlePkgInstruct);
+                        t.Wait();
+                        if (t.Result)
+                        {
+                            stats.Success++;
+                        }
+                        else
+                            stats.Failure++;
+                    }
+                    else
+                    {
+                        bool r = DeleteOnePackage(vp, sdp);
+                        if (r)
+                            stats.Success++;
+                        else
+                            stats.Failure++;
+                    }
+                }
             }
             sqlCon?.Close();
-            return stats;
+            return stats;  //Task.FromResult(stats);
         }
 
-        private bool IsErrorWorthTryingRevise(Exception e)
+
+        class SoftwareDistributionPackageAugment
         {
-            //if (e.Message.Contains("the following Prerequisites haven't been published yet") ||
-            //    e.Message.Contains("timed out") ||
-            //    e.Message.Contains("timeout") ||
-            //    e.Message.Contains("InstallableItemInfo"))
-            //{
-            //    return false;
-            //}
-            if (e.Message.Contains("InstallableItemInfo"))
-                return true;
-
-            return false;
+            public SoftwareDistributionPackage Sdp { get; set; }
+            public bool isProcessed { get; set; }
         }
 
-        public async Task<bool> ImportFromSdp(VendorProfile vp)
+        private void DfsPublishRecur(Dictionary<Guid, SoftwareDistributionPackageAugment> d, SoftwareDistributionPackage sdp, SinglePackagePublishInstruction instruct, ImportStats stats)
+        {
+            IList<PrerequisiteGroup> groups = sdp.Prerequisites;
+            foreach (PrerequisiteGroup g in groups)
+            {
+                IList<Guid> ids = g.Ids;
+                foreach (Guid id in ids)
+                {
+                    SoftwareDistributionPackageAugment sdpA = d[id];
+                    if (!sdpA.isProcessed)
+                    {
+                        DfsPublishRecur(d, sdpA.Sdp, instruct, stats);
+                    }
+                }
+            }
+            IList<Guid> bundledPackages = sdp.BundledPackages;
+            foreach(Guid guid in bundledPackages)
+            {
+                SoftwareDistributionPackageAugment sdpA = d[guid];
+                if (!sdpA.isProcessed)
+                {
+                    DfsPublishRecur(d, sdpA.Sdp, instruct, stats);
+                }
+            }
+ 
+            Task<bool> t = PublishOnePackage(sdp, instruct);
+            t.Wait();
+            if (t.Result)
+            {
+                stats.Success++;
+            }
+            else
+                stats.Failure++;
+            d[sdp.PackageId].isProcessed = true;
+        }
+
+        private void DfsPublish(IEnumerable<SoftwareDistributionPackage> extractedSdps, SinglePackagePublishInstruction instruct, ImportStats stats)
+        {
+            Dictionary<Guid, SoftwareDistributionPackageAugment> d = new Dictionary<Guid, SoftwareDistributionPackageAugment>();
+            foreach (SoftwareDistributionPackage sdp in extractedSdps)
+            {
+                d.Add(sdp.PackageId, new SoftwareDistributionPackageAugment { Sdp = sdp, isProcessed = false });
+            }
+
+            foreach (SoftwareDistributionPackage sdp in extractedSdps)
+            {
+                SoftwareDistributionPackageAugment sdpAug = d[sdp.PackageId];
+                if (!sdpAug.isProcessed)
+                {
+                    DfsPublishRecur(d, sdp, instruct, stats);
+                }
+            }
+        }
+
+
+        class SoftwareDistributionPackageAugment2
+        {
+            public SoftwareDistributionPackage Sdp { get; set; }
+            public readonly LinkedList<Guid> depend = new LinkedList<Guid>();
+            public bool isProcessed { get; set; }
+        }
+
+        private void DfsDeleteRecur(Dictionary<Guid, SoftwareDistributionPackageAugment2> d, SoftwareDistributionPackage sdp, SinglePackagePublishInstruction instruct, ImportStats stats)
+        {
+            SoftwareDistributionPackageAugment2 sdpAug2 = d[sdp.PackageId];
+            LinkedList<Guid> depend = sdpAug2.depend;
+            foreach(Guid guid in depend)
+            {
+                if (!d[guid].isProcessed)
+                {
+                    DfsDeleteRecur(d, d[guid].Sdp, instruct, stats);
+                }
+            }
+            bool r = DeleteOnePackage(instruct.Vp, sdp);
+            if (r)
+                stats.Success++;
+            else
+                stats.Failure++;
+            sdpAug2.isProcessed = true;
+        }
+
+        private void DfsDelete(IEnumerable<SoftwareDistributionPackage> sdps, SinglePackagePublishInstruction instruct, ImportStats stats)
+        {
+            Dictionary<Guid, SoftwareDistributionPackageAugment2> d = new Dictionary<Guid, SoftwareDistributionPackageAugment2>();
+            foreach(SoftwareDistributionPackage sdp in sdps)
+            {
+                d.Add(sdp.PackageId, new SoftwareDistributionPackageAugment2 { Sdp = sdp, isProcessed = false });
+            }
+            foreach(SoftwareDistributionPackage sdp in sdps)
+            {
+                IList<PrerequisiteGroup> groups = sdp.Prerequisites;
+                foreach(PrerequisiteGroup g in groups)
+                {
+                    IList<Guid> ids = g.Ids;
+                    foreach(Guid id in ids)
+                    {
+                        d[id].depend.AddLast(sdp.PackageId);
+                    }
+                }
+                IList<Guid> bundledPackages = sdp.BundledPackages;
+                foreach(Guid guid in bundledPackages)
+                {
+                    d[guid].depend.AddLast(sdp.PackageId);
+                }
+            }
+
+            foreach(SoftwareDistributionPackage sdp in sdps)
+            {
+                SoftwareDistributionPackageAugment2 sdpAug2 = d[sdp.PackageId];
+                if (!sdpAug2.isProcessed)
+                {
+                    DfsDeleteRecur(d, sdp, instruct, stats);
+                }
+            }
+        }
+
+
+        public ImportStats ImportFromSdp(VendorProfile vp, ImportInstructions instruct)
         {
             string s = Path.Combine(dirFinder.GetCabExtractOutputDir(), vp.ExtractOutputFolderName, "V2");
+            ImportStats stats = new ImportStats();
             if (Directory.Exists(s))
             {
                 var dirInfo = new DirectoryInfo(s);
                 FileInfo[] files = dirInfo.GetFiles();
-                SqlConnection sqlCon = new SqlConnection(ConnectionStr);
-                sqlCon.Open();
-                try
+                stats.Total = files.Length;
+
+                SqlConnection sqlCon = null;
+                if (instruct.UpdateSusdbForVisibilityInConsole)
                 {
-                    foreach (FileInfo file in files)
+                    sqlCon = new SqlConnection(ConnectionStr);
+                    sqlCon.Open();
+                }
+
+                if (instruct.AsyncProcessEachPackage)
+                {
+                    int i = 0, batch = 1;
+                    while (i < files.Length)
                     {
-                        await ImportFromSdp(file.FullName, sqlCon);
+                        LinkedList<Task<bool>> tasks = new LinkedList<Task<bool>>();
+
+                        for (; i < batch * batchSize && i < files.Length; i++)
+                        {
+                            if (instruct.PublishOrDelete)
+                            {
+                                FileInfo f = files[i];
+                                SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, false, false, f.FullName, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+                                tasks.AddLast(ImportFromSingleSdp(f.FullName, true, singlePkgInstruct));
+                            }
+                            else
+                            {
+                                FileInfo f = files[i];
+                                SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, false, false, f.FullName, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+                                tasks.AddLast(ImportFromSingleSdp(f.FullName, false, singlePkgInstruct));
+                            }
+                        }
+                        Task.WaitAll(tasks.ToArray());
+                        foreach (Task<bool> t in tasks)
+                        {
+                            if (t.Result)
+                            {
+                                stats.Success++;
+                            }
+                            else
+                                stats.Failure++;
+                        }
+                        batch++;
                     }
                 }
-                catch (Exception ex)
+                else // Synchronous
                 {
-                    sqlCon.Close();
-                    logger.LogError(ex, "[{vn}] : Fail to import SDP files\n", vp.Name);
-                    return false;
+                    try
+                    {
+                        foreach (FileInfo file in files)
+                        {
+                            if (instruct.PublishOrDelete)
+                            {
+                                SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, false, false, file.FullName, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+                                Task<bool> t = ImportFromSingleSdp(file.FullName, true, singlePkgInstruct);
+                                t.Wait();
+                                if (t.Result)
+                                { stats.Success++; }
+                                else
+                                {  stats.Failure++; }
+                            }
+                            else
+                            {
+                                SinglePackagePublishInstruction singlePkgInstruct = new SinglePackagePublishInstruction(vp, false, false, file.FullName, instruct.ArtificiallyMarshalDetectoid, instruct.UpdateSusdbForVisibilityInConsole, instruct.AsyncUpdateSusdb, sqlCon);
+                                Task<bool> t = ImportFromSingleSdp(file.FullName, false, singlePkgInstruct);
+                                t.Wait();
+                                if (t.Result)
+                                { stats.Success++; }
+                                else
+                                { stats.Failure++; }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        stats.Failure++;
+                    }
                 }
-                sqlCon.Close();
+                sqlCon?.Close();
+                return stats;
             }
-            return true;
+            else
+            {
+                return stats;
+            }
         }
-        private async Task<bool> ImportFromSdp(string sdpFilePath, SqlConnection sqlConnection)
+
+        public async Task<bool> ImportFromSingleSdp(string sdpFilePath, bool publishOrDelete, SinglePackagePublishInstruction instruct)
         {
             try
             {
-                IPublisher publisher = wsus.GetPublisher(sdpFilePath);
-                publisher.MetadataOnly = true;
-                try
+                SoftwareDistributionPackage sdp = new SoftwareDistributionPackage(sdpFilePath);
+                
+                if (publishOrDelete)
                 {
-                    publisher.PublishPackage(null, null, null);
+                    Task<bool> t = PublishOnePackage(sdp, instruct);
+                    await t;
+                    return t.Result;
                 }
-                catch
+                else
                 {
-                    publisher.RevisePackage();
+                    return DeleteOnePackage(instruct.Vp, sdp);
                 }
-                string sdpId = Path.GetFileNameWithoutExtension(sdpFilePath);
-                await UpdateDatabaseAsync(sdpId, sqlConnection);
-                return true;
             }
             catch(Exception ex)
             {
@@ -322,7 +870,7 @@ namespace DriverCatalogImporter
             }
         }
 
-        private  bool UpdateDatabase(string packageId, SqlConnection sqlConnection)
+        private bool UpdateDatabase(string packageId, SqlConnection sqlConnection)
         {
             try
             {

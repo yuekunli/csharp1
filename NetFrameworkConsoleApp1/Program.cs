@@ -14,7 +14,12 @@ namespace NetFrameworkConsoleApp1
             //CabFileWorker.extract();
             //CabExtractor.ExtractCabFile();
             //WsusImporter.test();
-            DriverCatalogImporter.WsusImporterTestWrapper.TestWsusImporter();
+            //DriverCatalogImporter.WsusImporterTestWrapper.TestWsusImporter();
+            //string a = "Hello World";
+            //Console.WriteLine(a.IndexOf("hello", StringComparison.InvariantCultureIgnoreCase));
+            //Console.WriteLine(a.IndexOf("wORLD", StringComparison.InvariantCultureIgnoreCase));
+            DriverCatalogImporter.WsusImporterTestWrapper.TestWsusImportFromXml();
+            //DriverCatalogImporter.WsusImporterTestWrapper.TestWsusImportFromSdp();
         }
     }
 }

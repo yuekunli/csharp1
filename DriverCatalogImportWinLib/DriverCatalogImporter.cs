@@ -100,7 +100,7 @@ namespace DriverCatalogImporter
             new VendorProfile("HPEnterprise", @"https://downloads.hpe.com/pub/softlib/puc/hppuc.cab", true)
         };
 
-        private readonly System.Timers.Timer aTimer;
+        //private readonly System.Timers.Timer aTimer;
 
         private readonly Downloader dl;
 
@@ -149,6 +149,10 @@ namespace DriverCatalogImporter
         private bool useWsusImport = true;
         private bool asyncProcessEachPackage = true;
         private bool updateSusdbForVisibilityInConsole = false;
+        private bool asyncUpdateSusdb = false;
+        private bool publishOrDelete = true;
+        private bool artificiallyMarshalDetectoid = true;
+        private bool onlyOneDetectoidInLenovo = true;
 
         // options about Proxy
         private Uri proxy = null;
@@ -368,7 +372,6 @@ namespace DriverCatalogImporter
                     logger?.LogError(e, "Invalid value for \"ImmediateRunAfterStart\" option, it has to be True or False\n");
                 }
             }
-            
             else if (k.Equals("RunIntervalInSeconds", StringComparison.CurrentCultureIgnoreCase))
             {
                 try
@@ -457,7 +460,6 @@ namespace DriverCatalogImporter
                     logger?.LogError(e, "Invalid value for \"WsusEndPoint\" option, it has to be in the 1.1.1.1 or 1.1.1.1:80 format\n");
                 }
             }
-            //shouldAsyncPublishEachPackage
             else if (k.Equals("AsyncProcessEachPackage", StringComparison.CurrentCultureIgnoreCase))
             {
                 try
@@ -478,6 +480,50 @@ namespace DriverCatalogImporter
                 catch (FormatException e)
                 {
                     logger?.LogError(e, "Invalid value for \"UpdateSusdbForVisibilityInConsole\" option, it has to be True or False\n");
+                }
+            }
+            else if (k.Equals("AsyncUpdateSusdb", StringComparison.CurrentCultureIgnoreCase))
+            {
+                try
+                {
+                    asyncUpdateSusdb = bool.Parse(v);
+                }
+                catch (FormatException e)
+                {
+                    logger?.LogError(e, "Invalid value for \"AsyncUpdateSusdb\" option, it has to be True or False\n");
+                }
+            }
+            else if (k.Equals("PublishOrDelete", StringComparison.CurrentCultureIgnoreCase))
+            {
+                try
+                {
+                    publishOrDelete = bool.Parse(v);
+                }
+                catch (FormatException e)
+                {
+                    logger?.LogError(e, "Invalid value for \"PublishOrDelete\" option, it has to be True or False\n");
+                }
+            }
+            else if (k.Equals("ArtificiallyMarshalDetectoid", StringComparison.CurrentCultureIgnoreCase))
+            {
+                try
+                {
+                    artificiallyMarshalDetectoid = bool.Parse(v);
+                }
+                catch (FormatException e)
+                {
+                    logger?.LogError(e, "Invalid value for \"ArtificiallyMarshalDetectoid\" option, it has to be True or False\n");
+                }
+            }
+            else if (k.Equals("OnlyOneDetectoidInLenovo", StringComparison.CurrentCultureIgnoreCase))
+            {
+                try
+                {
+                    onlyOneDetectoidInLenovo = bool.Parse(v);
+                }
+                catch (FormatException e)
+                {
+                    logger?.LogError(e, "Invalid value for \"OnlyOneDetectoidInLenovo\" option, it has to be True or False\n");
                 }
             }
             else if (k.Equals("Proxy", StringComparison.CurrentCultureIgnoreCase))
@@ -683,7 +729,7 @@ namespace DriverCatalogImporter
                 loggerFactory.AddProvider(new FileLoggerProvider(logFilePath, new FileLoggerOptions()
                 {
                     FileSizeLimitBytes = 5 * 1024 * 1024,
-                    MaxRollingFiles = 3,
+                    MaxRollingFiles = 5,
                     Append = true,
                     MinLevel = minLogLevel,
                     UseUtcTimestamp = true
@@ -752,14 +798,14 @@ namespace DriverCatalogImporter
 
             ParseDumpedVendorProfile(); // get last download timestamp
 
-            List<Task> tasks = new List<Task>();
+            LinkedList<Task> tasks = new LinkedList<Task>();
 
             foreach (VendorProfile v in vendors)
             {
                 if (v.Eligible)
                 {
                     logger?.LogInformation("[{VendorName}] : Eligible, Start task", v.Name);
-                    tasks.Add(
+                    tasks.AddLast(
                         Task.Run(async () =>
                         {
                             TimeSpan? interval = DateTime.Now - v.LastDownload;
@@ -867,20 +913,20 @@ namespace DriverCatalogImporter
                 {
                     if (v.HasChange)
                     {
-                        var impTask = imp.ImportFromXml(v, new ImportInstructions(asyncProcessEachPackage, updateSusdbForVisibilityInConsole));
-                        if (impTask.Result.Total > 0)
+                        var impResult = imp.ImportFromXml(v, new ImportInstructions(asyncProcessEachPackage, updateSusdbForVisibilityInConsole, asyncUpdateSusdb, publishOrDelete, artificiallyMarshalDetectoid, onlyOneDetectoidInLenovo));
+                        if (impResult.Total > 0)
                         {
-                            if (impTask.Result.Total == impTask.Result.Success)
+                            if (impResult.Total == impResult.Success)
                             {
                                 logger?.LogInformation("[{VendorName}] : Success, import from XML file", v.Name);
                                 v.RunResult = RunResult.Success_Imported;
                             }
-                            else if (impTask.Result.Total > impTask.Result.Success && impTask.Result.Success > 0)
+                            else if (impResult.Total > impResult.Success && impResult.Success > 0)
                             {
                                 logger?.LogInformation("[{vn}] : Partial Success, import from XML file", v.Name);
                                 v.RunResult = RunResult.Partial_Success_Imported;
                             }
-                            else if (impTask.Result.Success == 0)
+                            else if (impResult.Success == 0)
                             {
                                 logger?.LogCritical("[{vn}] : All Fail, import from XML file", v.Name);
                                 v.RunResult = RunResult.All_Fail_Import;
@@ -891,7 +937,7 @@ namespace DriverCatalogImporter
                             logger?.LogError("[{VendorName}] : Failure, import XML file", v.Name);
                             v.RunResult = RunResult.Fail_Parsing_XML;
                         }
-                        logger?.LogInformation("[{vn}] : Import result: Total: {t}, Success: {s}, Fail: {f}", v.Name, impTask.Result.Total, impTask.Result.Success, impTask.Result.Failure);
+                        logger?.LogInformation("[{vn}] : Import result: Total: {t}, Success: {s}, Fail: {f}", v.Name, impResult.Total, impResult.Success, impResult.Failure);
 
                         bool r = ce.DeleteXml(v);
                         if (r)
@@ -918,7 +964,7 @@ namespace DriverCatalogImporter
         public void Dispose()
         {
             loggerFactory.Dispose();
-            aTimer.Dispose();
+            //aTimer.Dispose();
         }
     }
 }
