@@ -679,10 +679,19 @@ namespace DriverCatalogImporter
 
         private void CleanupAndRenameDir()
         {
-            string oldDir = dirFinder.GetOldCabFileDir();
-            Directory.Delete(oldDir, true);
-            string newDir = dirFinder.GetNewCabFileDir();
-            Directory.Move(newDir, oldDir);
+            foreach (VendorProfile v in vendors)
+            {
+                if (v.Eligible)
+                {
+                    if (v.RunResult == RunResult.Success_Imported || v.RunResult == RunResult.Partial_Success_Imported)
+                    {
+                        string oldFilePath = Path.Combine(dirFinder.GetOldCabFileDir(), v.CabFileName);
+                        string newFilePath = Path.Combine(dirFinder.GetNewCabFileDir(), v.CabFileName);
+                        File.Delete(oldFilePath);
+                        File.Move(newFilePath, oldFilePath);
+                    }
+                }
+            }
         }
 
         private void WriteFlagFile()
