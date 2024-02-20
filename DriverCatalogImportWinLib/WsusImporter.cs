@@ -3,7 +3,6 @@ using Microsoft.UpdateServices.Administration;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
@@ -12,7 +11,7 @@ using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.XPath;
 
-namespace DriverCatalogImporter 
+namespace DriverCatalogImporter
 {
     internal class SinglePackagePublishInstruction
     {
@@ -23,7 +22,6 @@ namespace DriverCatalogImporter
         public string TempSdpFilePath { get; set; }
 
         public bool ArtificiallyMarshalDetectoid { get; set; }
-
         public bool UpdateSusdbForVisibility { get; set; }
         public bool AsyncUpdateSusdb {  get; set; }
         public SqlConnection SqlCon { get; set; }
@@ -112,33 +110,6 @@ namespace DriverCatalogImporter
         private bool DeleteOnePackage(VendorProfile vp, SoftwareDistributionPackage sdp)
         {
             bool success;
-            /*
-            if (sdp.PackageUpdateType != PackageUpdateType.Detectoid)
-            {
-                // if the sdp is a detectoid, even if it is published prior to this query, GetUpdate throws WsusObjectNotFoundException
-                // So only do the GetUpdate check when sdp is not a detectoid.
-                // What is the correct way to check whether a detectoid is on server or not???
-                // Two other facts:
-                // (1). Calling DeleteUpdate with detectoid throws no exception if the detectoid really exists on the server.
-                //      Does it work? Yes, because if call the DeleteUpdate on the same detectoid again, it throws WsusOjbectNotFoundException
-                // (2). publishing a detectoid multiple times do seem to go through
-                try
-                {
-                    wsus.GetUpdate(new UpdateRevisionId(sdp.PackageId, 0));
-                    logger.LogTrace("[{vn}] : yes get udpate {pkgid}", vp.Name, sdp.PackageId.ToString());
-                }
-                catch (WsusObjectNotFoundException)
-                {
-                    logger.LogInformation("[{vn}] : Success, Delete, No action, package not exist {pkgid}", vp.Name, sdp.PackageId.ToString());
-                    return true;
-                }
-                catch (Exception e)
-                {
-                    logger.LogError(e, "[{vn}] : Fail, query package existence {pkgid}", vp.Name, sdp.PackageId.ToString());
-                    return false;
-                }
-            }
-            */
             try
             {
                 wsus.DeleteUpdate(sdp.PackageId);
@@ -155,7 +126,6 @@ namespace DriverCatalogImporter
                 logger.LogError(e1, "[{vn}] : Fail, delete package {pkgid}\n", vp.Name, sdp.PackageId.ToString());
                 success = false;
             }
-
             return success;
         }
 
@@ -271,6 +241,7 @@ namespace DriverCatalogImporter
                         if (instruct.CreateTempSdpFile)
                         {
                             sdp.Save(tmpSdpFilePath);
+
                             logger.LogTrace("[{vn}] : saved temporary sdp file {pkgid}", instruct.Vp.Name, sdp.PackageId.ToString());
                         }
                         IPublisher publisher = wsus.GetPublisher(tmpSdpFilePath);
@@ -351,7 +322,7 @@ namespace DriverCatalogImporter
             }
 
             ConcurrentQueue<SoftwareDistributionPackage> extractedSdps = new ConcurrentQueue<SoftwareDistributionPackage>();
-            //LinkedList<SoftwareDistributionPackage> extractedSdps = new LinkedList<SoftwareDistributionPackage>();
+            
             XmlNamespaceManager nsmgr = new XmlNamespaceManager(new NameTable());
             try
             {
@@ -389,11 +360,6 @@ namespace DriverCatalogImporter
                         // this constructor is obsolete, but the constructor that is not obsolete does not work!
                         
                     });
-                    //foreach(XmlNode node in xmlNodeList)
-                    //{
-                    //    XPathNavigator navigator = node.CreateNavigator();
-                    //    extractedSdps.AddLast(new SoftwareDistributionPackage(navigator));
-                    //}
                 }
                 else
                 {
@@ -413,6 +379,15 @@ namespace DriverCatalogImporter
             };
             
             logger.LogInformation("[{vn}] : Total software distribution packages: {t}", vp.Name, extractedSdps.Count());
+
+            // a special processing for Dell Server packages, change their VendorName field so that they are distinguishable from Dell PC packages in WSUS
+            if (vp.Name.Equals("DellServer", StringComparison.CurrentCultureIgnoreCase))
+            {
+                foreach(SoftwareDistributionPackage sdp in extractedSdps)
+                {
+                    sdp.VendorName = vp.Name;
+                }
+            }
 
             SqlConnection sqlCon = null;
             if (instruct.UpdateSusdbForVisibilityInConsole)
@@ -513,7 +488,7 @@ namespace DriverCatalogImporter
                 }
                 return stats;
             }
-
+            
             if (vp.Name.Equals("Lenovo", StringComparison.CurrentCultureIgnoreCase) || vp.Name.Equals("DellServer", StringComparison.CurrentCultureIgnoreCase))
             {
                 if (instruct.AsyncProcessEachPackage)

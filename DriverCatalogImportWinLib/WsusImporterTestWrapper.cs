@@ -19,7 +19,7 @@ namespace DriverCatalogImporter
 
         public static void TestWsusImportFromXml()
         {
-            VendorProfile v = vendors[3];
+            VendorProfile v = vendors[4];
 
             IDirFinder dirFinder  = new SimpleDirFinder(@"C:\Temp\");
 
@@ -38,7 +38,7 @@ namespace DriverCatalogImporter
 
             IImporter imp = new WsusImporter(loggerFactory.CreateLogger<WsusImporter>(), dirFinder);
 
-            var impResult = imp.ImportFromXml(v, new ImportInstructions(/*async each pkg*/true, /*update db*/false, /*async update db*/false, /*publish or delete*/false, /*marshal detectoid*/false, /*only 1 detect in lenovo*/true));
+            var impResult = imp.ImportFromXml(v, new ImportInstructions(/*async each pkg*/true, /*update db*/false, /*async update db*/false, /*publish or delete*/true, /*marshal detectoid*/false, /*only 1 detect in lenovo*/true));
             if (impResult.Total > 0) // accesssing Result blocks the calling thread, it's equivalent to calling the Wait method
             {
                 if (impResult.Total == impResult.Success)

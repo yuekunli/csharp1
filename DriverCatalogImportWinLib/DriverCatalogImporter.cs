@@ -2,7 +2,6 @@
 using NReco.Logging.File;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Contracts;
 using System.Globalization;
 using System.IO;
 using System.Net;
@@ -11,64 +10,6 @@ using System.Threading.Tasks;
 
 namespace DriverCatalogImporter
 {
-
-    /*
-     * Directory Schema:
-     *
-     *
-     * C:\Program Files\Adaptiva\DriverCatalogImport\
-     *   |
-     *   +-- data
-     *   |    |
-     *   |    +-- DriverCatalog   (workingDir)
-     *   |         |
-     *   |         +-- old
-     *   |         |   |
-     *   |         |   +-- DellSDPCatalogPC.cab
-     *   |         |   +-- FJSVUMCatalogForSCCM.cab
-     *   |         |   +-- ...
-     *   |         |
-     *   |         +-- new
-     *   |         |   |
-     *   |         |   +-- DellSCPCatalogPC.cab
-     *   |         |   +-- FJSVUMCatalogForSCCM.cab
-     *   |         |   +-- ...
-     *   |         |
-     *   |         +-- DellSDPCatalogPC.xml  (temporary)
-     *   |         |
-     *   |         +-- abcd1234abcdefef5678.sdp  (temporary)
-     *   |
-     *   +-- logs
-     *       |
-     *       +-- DriverCatalogImport.log
-     * 
-     *
-     *
-     * C:\Temp\
-     *   |
-     *   +-- DriverCatalog   (workingDir)
-     *   |     |
-     *   |     +-- old
-     *   |     |   |
-     *   |     |   +-- DellSDPCatalogPC.cab
-     *   |     |   +-- FJSVUMCatalogForSCCM.cab
-     *   |     |   +-- ...
-     *   |     |
-     *   |     +-- new
-     *   |     |   |
-     *   |     |   +-- DellSCPCatalogPC.cab
-     *   |     |   +-- FJSVUMCatalogForSCCM.cab
-     *   |     |   +-- ...
-     *   |     |
-     *   |     +-- DellSDPCatalogPC.xml  (temporary)
-     *   |     |
-     *   |     +-- abcd1234abcdefef5678.sdp  (temporary)
-     *   |
-     *   |
-     *   +-- DriverCatalogImport.log
-     * 
-     */
-
     public class AImporter : IDisposable
     {
         public enum RunResult
@@ -232,8 +173,6 @@ namespace DriverCatalogImporter
                 logger?.LogError(e, "Fail to create importer\n");
                 throw new Exception("Fail to create importer");
             }
-
-            //aTimer = new System.Timers.Timer();
         }
 
         private void InitializeVendors()
@@ -836,7 +775,6 @@ namespace DriverCatalogImporter
                                     return;
                                 }
                             }
-                            
 
                             Task<bool> dlTask = dl.DownloadCab(v);
                             await dlTask;
