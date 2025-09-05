@@ -300,15 +300,8 @@ namespace DriverCatalogImporter
 
         public ImportStats ImportFromXml(VendorProfile vp, ImportInstructions instruct)
         {
-            string xmlFileName;
-            if (!vp.Name.Equals("HP", StringComparison.CurrentCultureIgnoreCase))
-            {
-                xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
-            }
-            else
-            {
-                xmlFileName = Path.ChangeExtension(Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(vp.CabFileName)), ".xml");
-            }
+            string xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
+            
             string xmlFilePath = Path.Combine(dirFinder.GetCabExtractOutputDir(), xmlFileName);
 
             if (File.Exists(xmlFilePath))

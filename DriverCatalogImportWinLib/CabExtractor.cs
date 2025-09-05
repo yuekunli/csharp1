@@ -28,15 +28,7 @@ namespace DriverCatalogImporter
         public async Task<bool> ExtractXml(VendorProfile vp)
         {
             string cabFilePath = Path.Combine(dirFinder.GetNewCabFileDir(), vp.CabFileName);
-            string xmlFileName;
-            if (!vp.Name.Equals("HP", StringComparison.CurrentCultureIgnoreCase))
-            {
-                xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
-            }
-            else
-            {
-                xmlFileName = Path.ChangeExtension(Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(vp.CabFileName)), ".xml");
-            }
+            string xmlFileName = Path.ChangeExtension(vp.CabFileName, ".xml");
             
             string extractedXmlFilePath = Path.Combine(dirFinder.GetCabExtractOutputDir(), xmlFileName);
             logger.LogInformation("[{vn}] : cab file path: {path}", vp.Name, cabFilePath);
@@ -44,10 +36,26 @@ namespace DriverCatalogImporter
             {
                 using (SevenZipExtractor extractor = new SevenZipExtractor(cabFilePath))
                 {
+                    int index = -1;
+                    foreach (ArchiveFileInfo archiveFileDatum in extractor.ArchiveFileData)
+                    {
+                        if (archiveFileDatum.FileName.EndsWith("xml") && !archiveFileDatum.IsDirectory)
+                        {
+                            index = archiveFileDatum.Index;
+                            break;
+                        }
+                    }
+
+                    if (index == -1)
+                    {
+                        logger.LogError("[{vendorname}] : No XML file in cab");
+                        return false;
+                    }
+
                     logger.LogDebug("[{vendorname}] : start extracting XML file", vp.Name);
                     using (FileStream fs = File.Create(extractedXmlFilePath))
                     {
-                        await extractor.ExtractFileAsync(xmlFileName, fs);
+                        await extractor.ExtractFileAsync(index, fs);
                     }
                     logger.LogDebug("[{vendorname}] : done extracting XML file", vp.Name);
                 }
